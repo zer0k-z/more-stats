@@ -30,11 +30,11 @@ public Plugin myinfo =
 	name = "More Stats",
 	author = "Szwagi, zer0.k",
 	description = "Tracks various KZ related statistics",
-	version = "v3.0.1",
+	version = "v3.0.2",
 	url = "https://github.com/zer0k-z/more-stats"
 };
 
-#define UPDATER_URL "https://raw.githubusercontent.com/zer0k-z/gokz-discord/updater/updatefile.txt"
+#define UPDATER_URL "https://raw.githubusercontent.com/zer0k-z/more-stats/updater/updatefile.txt"
 
 // ===== [ PLUGIN EVENTS ] =====
 
