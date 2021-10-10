@@ -1,0 +1,28 @@
+"Updater" 
+{
+	"Information" 
+	{
+		"Version" 
+		{
+			"Latest"	"3.0.2"
+		}
+		
+		"Notes"		"Source available at https://github.com/zer0k-z/more-stats"
+	}
+
+	"Files" 
+	{
+		"Plugin"	"/addons/sourcemod/plugins/more-stats.smx"
+
+		"Source"	"/addons/sourcemod/scripting/more-stats.sp"
+		"Source"	"/addons/sourcemod/scripting/more-stats/airstats.sp"
+		"Source"	"/addons/sourcemod/scripting/more-stats/bhopstats.sp"
+		"Source"	"/addons/sourcemod/scripting/more-stats/resetstats.sp"
+		"Source"	"/addons/sourcemod/scripting/more-stats/commands.sp"
+		"Source"	"/addons/sourcemod/scripting/more-stats/databases.sp"
+		"Source"	"/addons/sourcemod/scripting/more-stats/globals.sp"
+		"Source"	"/addons/sourcemod/scripting/more-stats/helpers.sp"
+		"Source"	"/addons/sourcemod/scripting/more-stats/natives.sp"
+		"Source"	"/addons/sourcemod/scripting/include/more-stats.inc"
+	}
+}

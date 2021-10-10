@@ -1,0 +1,10 @@
+Plugin(source='addons/sourcemod/scripting/movementapi.sp')
+
+Package(name='MovementAPI',
+		plugins=['movementapi'],
+		gamedata='addons/sourcemod/gamedata',
+		filegroups={
+			'addons/sourcemod/scripting/include': ['addons/sourcemod/scripting/include/*'],
+			'.': ['LICENSE', 'README.md']
+		}
+)
