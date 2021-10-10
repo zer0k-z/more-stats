@@ -51,7 +51,7 @@ jobs:
 
       - name: Move compiled plugins
         run: ls -lr
-        working-directory: ./addons/sourcemod
+        working-directory: ./addons/sourcemod/plugins
 
       - name: Updater
         uses: peaceiris/actions-gh-pages@v3
