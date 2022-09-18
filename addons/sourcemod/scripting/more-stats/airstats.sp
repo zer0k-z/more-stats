@@ -1,6 +1,7 @@
 void InitializeAirStats(int client)
 {
 	gB_AirStatsLoaded[client] = false;
+	gB_ChatAirStats[client] = false;
 
 	for (int i = 0; i < sizeof(gF_OldVelocity[]); i++)
 	{

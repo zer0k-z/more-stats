@@ -15,7 +15,7 @@ public Plugin myinfo =
 	name = "MovementAPI", 
 	author = "DanZay", 
 	description = "Provides API focused on player movement", 
-	version = "2.1.0", 
+	version = "2.3.0", 
 	url = "https://github.com/danzayau/MovementAPI"
 };
 
@@ -125,11 +125,6 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 	CheckNoclip(client);
 	gI_Cmdnum[client] = cmdnum;
 	gI_TickCount[client] = tickcount;
-	gB_Duckbugged[client] = false;
-	gB_WalkMoved[client] = false;
-	gB_Jumpbugged[client] = false;
-	gB_Jumped[client] = false;
-	gB_TakeoffFromLadder[client] = false;
 	return Plugin_Continue;
 }
 
@@ -224,3 +219,4 @@ static void CheckNoclip(int client)
 		Call_OnChangeMovetype(client, gMT_OldMovetype[client], movetype);
 	}
 }
+
