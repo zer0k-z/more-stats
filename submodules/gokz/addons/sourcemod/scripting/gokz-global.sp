@@ -2,7 +2,7 @@
 
 #include <sdktools>
 
-#include <GlobalAPI-Core>
+#include <GlobalAPI>
 #include <gokz/anticheat>
 #include <gokz/core>
 #include <gokz/global>
@@ -41,15 +41,20 @@ bool gB_APIKeyCheck;
 bool gB_ModeCheck[MODE_COUNT];
 bool gB_BannedCommandsCheck;
 char gC_CurrentMap[64];
-char gC_CurrentMapPath[PLATFORM_MAX_PATH];
+int gI_CurrentMapFileSize;
 bool gB_InValidRun[MAXPLAYERS + 1];
 bool gB_GloballyVerified[MAXPLAYERS + 1];
 bool gB_EnforcerOnFreshMap;
 bool gB_JustLateLoaded;
 int gI_FPSMax[MAXPLAYERS + 1];
 bool gB_waitingForFPSKick[MAXPLAYERS + 1];
+bool gB_MapValidated;
+int gI_MapID;
+int gI_MapFileSize;
+int gI_MapTier;
 
 ConVar gCV_gokz_settings_enforcer;
+ConVar gCV_gokz_warn_for_non_global_map;
 ConVar gCV_EnforcedCVar[ENFORCEDCVAR_COUNT];
 
 #include "gokz-global/api.sp"
@@ -57,7 +62,8 @@ ConVar gCV_EnforcedCVar[ENFORCEDCVAR_COUNT];
 #include "gokz-global/commands.sp"
 #include "gokz-global/maptop_menu.sp"
 #include "gokz-global/print_records.sp"
-#include "gokz-global/send_time.sp"
+#include "gokz-global/send_run.sp"
+#include "gokz-global/points.sp"
 
 
 
@@ -80,6 +86,17 @@ public void OnPluginStart()
 	
 	LoadTranslations("gokz-common.phrases");
 	LoadTranslations("gokz-global.phrases");
+	
+	gB_APIKeyCheck = false;
+	gB_MapValidated = false;
+	gI_MapID = -1;
+	gI_MapFileSize = -1;
+	gI_MapTier = -1;
+	
+	for (int mode = 0; mode < MODE_COUNT; mode++)
+	{
+		gB_ModeCheck[mode] = false;
+	}
 	
 	CreateConVars();
 	CreateGlobalForwards();
@@ -178,7 +195,7 @@ public void FPSCheck(QueryCookie cookie, int client, ConVarQueryResult result, c
 			if (!gB_waitingForFPSKick[client])
 			{
 				gB_waitingForFPSKick[client] = true;
-				CreateTimer(GL_FPS_MAX_KICK_TIMEOUT, FPSKickPlayer, client, TIMER_FLAG_NO_MAPCHANGE);
+				CreateTimer(GL_FPS_MAX_KICK_TIMEOUT, FPSKickPlayer, GetClientUserId(client), TIMER_FLAG_NO_MAPCHANGE);
 				GOKZ_PrintToChat(client, true, "%t", "Warn Player fps_max");
 				if (GOKZ_GetTimerRunning(client))
 				{
@@ -205,8 +222,9 @@ public void MYAWCheck(QueryCookie cookie, int client, ConVarQueryResult result, 
 	}
 }
 
-Action FPSKickPlayer(Handle timer, int client)
+Action FPSKickPlayer(Handle timer, int userid)
 {
+	int client = GetClientOfUserId(userid);
 	if (IsValidClient(client) && !IsFakeClient(client) && gB_waitingForFPSKick[client])
 	{
 		KickClient(client, "%T", "Kick Player fps_max", client);
@@ -225,14 +243,39 @@ public void OnClientPutInServer(int client)
 	OnClientPutInServer_PrintRecords(client);
 }
 
-public void GlobalAPI_OnPlayer_Joined(int client, bool banned)
+// OnClientAuthorized is apparently too early
+public void OnClientPostAdminCheck(int client)
 {
-	gB_GloballyVerified[client] = !banned;
+	ResetPoints(client);
 	
-	if (banned && gB_GOKZLocalDB)
+	if (GlobalAPI_IsInit() && !IsFakeClient(client))
 	{
-		GOKZ_DB_SetCheater(client, true);
+		CheckClientGlobalBan(client);
+		UpdatePoints(client);
 	}
+}
+
+public void GlobalAPI_OnInitialized()
+{
+	SetupAPI();
+}
+
+
+public Action GOKZ_OnTimerStart(int client, int course)
+{
+	KZPlayer player = KZPlayer(client);
+	int mode = player.Mode;
+
+	// We check the timer running to prevent spam when standing inside VB.
+	if (gCV_gokz_warn_for_non_global_map.BoolValue
+		&& GlobalAPI_HasAPIKey()
+		&& !GlobalsEnabled(mode)
+		&& !GOKZ_GetTimerRunning(client))
+	{
+		GOKZ_PrintToChat(client, true, "%t", "Warn Player Not Global Run");
+	}
+
+	return Plugin_Continue;
 }
 
 public void GOKZ_OnTimerStart_Post(int client, int course)
@@ -248,6 +291,19 @@ public void GOKZ_OnTimerEnd_Post(int client, int course, float time, int telepor
 	{
 		SendTime(client, course, time, teleportsUsed);
 	}
+}
+
+public void GOKZ_RP_OnReplaySaved(int client, int replayType, const char[] map, int course, int timeType, float time, const char[] filePath)
+{
+	if (gB_GloballyVerified[client] && gB_InValidRun[client])
+	{
+		OnReplaySaved_SendReplay(client, replayType, map, course, timeType, time, filePath);
+	}
+}
+
+public void GOKZ_OnRunInvalidated(int client)
+{
+	gB_InValidRun[client] = false;
 }
 
 public void GOKZ_GL_OnNewTopTime(int client, int course, int mode, int timeType, int rank, int rankOverall, float runTime)
@@ -274,6 +330,9 @@ public void OnMapStart()
 {
 	LoadSounds();
 
+	GetCurrentMapDisplayName(gC_CurrentMap, sizeof(gC_CurrentMap));
+	gI_CurrentMapFileSize = GetCurrentMapFileSize();
+	
 	gB_BannedCommandsCheck = true;
 	
 	// Prevent just reloading the plugin after messing with the map
@@ -286,19 +345,33 @@ public void OnMapStart()
 		gB_EnforcerOnFreshMap = true;
 	}
 	
+	// In case of late loading
+	if (GlobalAPI_IsInit())
+	{
+		GlobalAPI_OnInitialized();
+	}
+	
 	// Setup a timer to monitor server/client integrity
 	CreateTimer(1.0, IntegrityChecks, INVALID_HANDLE, TIMER_FLAG_NO_MAPCHANGE | TIMER_REPEAT);
 }
 
-public void OnConfigsExecuted()
+public void OnMapEnd()
 {
-	SetupAPI();
+	// So it doesn't get carried over to the next map
+	gI_MapID = -1;
+	for (int client = 1; client < MaxClients; client++)
+	{
+		ResetMapPoints(client);
+	}
 }
 
-public void GlobalAPI_OnAPIKeyReloaded()
+public void GOKZ_OnOptionChanged(int client, const char[] option, any newValue)
 {
-	GlobalAPI API;
-	API.GetAuthStatus(OnAuthStatusCallback);
+	if (StrEqual(option, gC_CoreOptionNames[Option_Mode])
+		&& GlobalAPI_IsInit())
+	{
+		UpdatePoints(client);
+	}
 }
 
 public void GOKZ_OnModeUnloaded(int mode)
@@ -306,12 +379,16 @@ public void GOKZ_OnModeUnloaded(int mode)
 	gB_ModeCheck[mode] = false;
 }
 
-public Action GOKZ_OnTimerNativeCalledExternally(Handle plugin)
+public Action GOKZ_OnTimerNativeCalledExternally(Handle plugin, int client)
 {
 	char pluginName[64];
 	GetPluginInfo(plugin, PlInfo_Name, pluginName, sizeof(pluginName));
-	LogMessage("gokz-core native called by \"%s\" was blocked.", pluginName);
-	return Plugin_Stop;
+	if (GOKZ_GetTimerRunning(client) && GOKZ_GetValidTimer(client))
+	{
+		LogMessage("Invalidated %N's run as gokz-core native was called by \"%s\"", client, pluginName);
+	}
+	GOKZ_InvalidateRun(client);
+	return Plugin_Continue;
 }
 
 
@@ -325,9 +402,9 @@ bool GlobalsEnabled(int mode)
 
 bool MapCheck()
 {
-	return GlobalAPI_GetMapGlobalStatus()
-	 && GlobalAPI_GetMapID() > 0
-	 && GlobalAPI_GetMapFilesize() == FileSize(gC_CurrentMapPath);
+	return gB_MapValidated
+	 && gI_MapID > 0
+	 && gI_MapFileSize == gI_CurrentMapFileSize;
 }
 
 void PrintGlobalCheckToChat(int client)
@@ -347,11 +424,6 @@ void PrintGlobalCheckToChat(int client)
 		FormatEx(modeCheck, sizeof(modeCheck), "%s {grey}| {purple}%s %s", modeCheck, gC_ModeNames[i], gB_ModeCheck[i] ? "{green}✓" : "{darkred}X");
 	}
 	GOKZ_PrintToChat(client, false, "%s", modeCheck);
-}
-
-void InvalidateRun(int client)
-{
-	gB_InValidRun[client] = false;
 }
 
 void AnnounceNewTopTime(int client, int course, int mode, int timeType, int rank, int rankOverall)
@@ -459,6 +531,7 @@ static void CreateConVars()
 	AutoExecConfig_SetCreateFile(true);
 	
 	gCV_gokz_settings_enforcer = AutoExecConfig_CreateConVar("gokz_settings_enforcer", "1", "Whether GOKZ enforces convars required for global records.", _, true, 0.0, true, 1.0);
+	gCV_gokz_warn_for_non_global_map = AutoExecConfig_CreateConVar("gokz_warn_for_non_global_map", "1", "Whether or not GOKZ should warn players if the global check does not pass.", _, true, 0.0, true, 1.0);
 	gCV_gokz_settings_enforcer.AddChangeHook(OnConVarChanged);
 	
 	AutoExecConfig_ExecuteFile();
@@ -485,9 +558,9 @@ public void OnConVarChanged(ConVar convar, const char[] oldValue, const char[] n
 		}
 		else
 		{
-			for (int i = 1; i <= MaxClients; i++)
+			for (int client = 1; client <= MaxClients; client++)
 			{
-				InvalidateRun(i);
+				gB_InValidRun[client] = false;
 			}
 			
 			// You have to change map before you can re-activate that
@@ -513,47 +586,139 @@ public void OnEnforcedConVarChanged(ConVar convar, const char[] oldValue, const 
 
 static void SetupAPI()
 {
-	GlobalAPI API;
-	API.GetMapName(gC_CurrentMap, sizeof(gC_CurrentMap));
-	API.GetMapPath(gC_CurrentMapPath, sizeof(gC_CurrentMapPath));
-	API.GetAuthStatus(OnAuthStatusCallback);
-	API.GetModeInfo(GOKZ_GL_GetGlobalMode(Mode_Vanilla), OnModeInfoCallback, Mode_Vanilla);
-	API.GetModeInfo(GOKZ_GL_GetGlobalMode(Mode_SimpleKZ), OnModeInfoCallback, Mode_SimpleKZ);
-	API.GetModeInfo(GOKZ_GL_GetGlobalMode(Mode_KZTimer), OnModeInfoCallback, Mode_KZTimer);
+	GlobalAPI_GetAuthStatus(GetAuthStatusCallback);
+	GlobalAPI_GetModes(GetModeInfoCallback);
+	GlobalAPI_GetMapByName(GetMapCallback, _, gC_CurrentMap);
+	
+	for (int client = 1; client <= MaxClients; client++)
+	{
+		if (IsValidClient(client) && !IsFakeClient(client))
+		{
+			CheckClientGlobalBan(client);
+		}
+	}
 }
 
-public int OnAuthStatusCallback(bool failure, bool authenticated)
+public int GetAuthStatusCallback(JSON_Object auth_json, GlobalAPIRequestData request)
 {
-	if (failure)
+	if (request.Failure)
 	{
 		LogError("Failed to check API key with Global API.");
-		gB_APIKeyCheck = false;
+		return;
 	}
-	else
+	
+	APIAuth auth = view_as<APIAuth>(auth_json);
+	if (!auth.IsValid)
 	{
-		if (!authenticated)
+		LogError("Global API key was found to be missing or invalid.");
+	}
+	gB_APIKeyCheck = auth.IsValid;
+}
+
+public int GetModeInfoCallback(JSON_Object modes, GlobalAPIRequestData request)
+{
+	if (request.Failure)
+	{
+		LogError("Failed to check mode versions with Global API.");
+		return;
+	}
+	
+	if (!modes.IsArray)
+	{
+		LogError("GlobalAPI returned a malformed response while looking up the modes.");
+		return;
+	}
+	
+	for (int i = 0; i < modes.Length; i++)
+	{
+		APIMode mode = view_as<APIMode>(modes.GetObjectIndexed(i));
+		int mode_id = GOKZ_GL_FromGlobalMode(view_as<GlobalMode>(mode.Id));
+		if (mode_id == -1)
 		{
-			LogError("Global API key was found to be missing or invalid.");
+			LogError("GlobalAPI returned a malformed mode.");
 		}
-		gB_APIKeyCheck = authenticated;
+		else if (mode.LatestVersion <= GOKZ_GetModeVersion(mode_id))
+		{
+			gB_ModeCheck[mode_id] = true;
+		}
+		else
+		{
+			char desc[128];
+			
+			gB_ModeCheck[mode_id] = false;
+			mode.GetLatestVersionDesc(desc, sizeof(desc));
+			LogError("Global API requires %s mode version %d (%s). You have version %d (%s).", 
+				gC_ModeNames[mode_id], mode.LatestVersion, desc, GOKZ_GetModeVersion(mode_id), GOKZ_VERSION);
+		}
 	}
 }
 
-public int OnModeInfoCallback(bool failure, const char[] name, int latest_version, const char[] latest_version_description, int mode)
+public int GetMapCallback(JSON_Object map_json, GlobalAPIRequestData request)
 {
-	if (failure)
+	if (request.Failure || map_json == INVALID_HANDLE)
 	{
-		LogError("Failed to check a mode version with Global API.");
+		LogError("Failed to get map info.");
+		return;
 	}
-	else if (latest_version <= GOKZ_GetModeVersion(mode))
+	
+	APIMap map = view_as<APIMap>(map_json);
+	
+	gB_MapValidated = map.IsValidated;
+	gI_MapID = map.Id;
+	gI_MapFileSize = map.Filesize;
+	gI_MapTier = map.Difficulty;
+	
+	// We don't do that earlier cause we need the map ID
+	for (int client = 1; client <= MaxClients; client++)
 	{
-		gB_ModeCheck[mode] = true;
+		if (IsValidClient(client) && IsClientAuthorized(client) && !IsFakeClient(client))
+		{
+			UpdatePoints(client);
+		}
 	}
-	else
+}
+
+void CheckClientGlobalBan(int client)
+{
+	char steamid[32];
+	GetClientAuthId(client, AuthId_Steam2, steamid, sizeof(steamid));
+	GlobalAPI_GetPlayerBySteamId(CheckClientGlobalBan_Callback, client, steamid);
+}
+
+public void CheckClientGlobalBan_Callback(JSON_Object player_json, GlobalAPIRequestData request, int client)
+{
+	if (!IsValidClient(client))
 	{
-		gB_ModeCheck[mode] = false;
-		LogError("Global API requires %s mode version %d (%s). You have version %d (%s).", 
-			gC_ModeNames[mode], latest_version, latest_version_description, GOKZ_GetModeVersion(mode), GOKZ_VERSION);
+		return;
+	}
+	
+	if (request.Failure)
+	{
+		LogError("Failed to get ban info.");
+		return;
+	}
+	
+	char client_steamid[32], response_steamid[32];
+	GetClientAuthId(client, AuthId_Steam2, client_steamid, sizeof(client_steamid));
+	
+	if (!player_json.IsArray || player_json.Length != 1)
+	{
+		LogError("Got malformed reply when querying steamid %s", client_steamid);
+		return;
+	}
+	
+	APIPlayer player = view_as<APIPlayer>(player_json.GetObjectIndexed(0));
+	player.GetSteamId(response_steamid, sizeof(response_steamid));
+	if (!StrEqual(client_steamid, response_steamid))
+	{
+		return;
+	}
+	
+	gB_GloballyVerified[client] = !player.IsBanned;
+	
+	if (player.IsBanned && gB_GOKZLocalDB)
+	{
+		GOKZ_DB_SetCheater(client, true);
 	}
 }
 
@@ -563,4 +728,4 @@ static void LoadSounds()
 	FormatEx(downloadPath, sizeof(downloadPath), "sound/%s", GL_SOUND_NEW_RECORD);
 	AddFileToDownloadsTable(downloadPath);
 	PrecacheSound(GL_SOUND_NEW_RECORD, true);
-} 
+}

@@ -52,7 +52,7 @@ Plugin to display statistics about various KZ actions. Read [this](https://githu
 
 ### Dependencies
 - [MovementAPI](https://github.com/danzayau/MovementAPI)
-- [GOKZ](https://bitbucket.org/kztimerglobalteam/gokz/)
+- [GOKZ](https://github.com/KZGlobalTeam/gokz/)
 - [Updater](https://forums.alliedmods.net/showthread.php?t=169095) (Optional)
 
 ### Notes

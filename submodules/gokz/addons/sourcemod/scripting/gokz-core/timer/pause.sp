@@ -82,6 +82,12 @@ bool CanPause(int client)
 			GOKZ_PlayErrorSound(client);
 			return false;
 		}
+		else if (AntiPauseTriggerIsTouched(client))
+		{
+			GOKZ_PrintToChat(client, true, "%t", "Can't Pause (Anti Pause Area)");
+			GOKZ_PlayErrorSound(client);
+			return false;
+		}
 	}
 	
 	return true;
@@ -118,6 +124,9 @@ void Resume(int client)
 	{
 		Movement_SetMovetype(client, MOVETYPE_WALK);
 	}
+	
+	// Prevent noclip exploit
+	SetEntProp(client, Prop_Send, "m_CollisionGroup", GOKZ_COLLISION_GROUP_STANDARD);
 	paused[client] = false;
 	if (GetTimerRunning(client))
 	{

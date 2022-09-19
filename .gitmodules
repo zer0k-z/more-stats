@@ -1,6 +1,6 @@
 [submodule "submodules/gokz"]
 	path = submodules/gokz
-	url = https://bitbucket.org/kztimerglobalteam/gokz.git
+	url = https://github.com/KZGlobalTeam/gokz.git
 [submodule "submodules/MovementAPI"]
 	path = submodules/MovementAPI
 	url = https://github.com/danzayau/MovementAPI.git

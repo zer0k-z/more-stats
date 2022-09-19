@@ -24,7 +24,10 @@ void GOKZ_OnTimerStart_ResetStats(int client, int course)
 void GOKZ_OnTimerEnd_ResetStats(int client, int course, int teleports)
 {
 	int mode = GOKZ_GetCoreOption(client, Option_Mode);
-	
+	if (!GOKZ_GetValidTimer(client))
+	{
+		return;
+	}
 	IncrementVariable(client, gI_CompletionCount[client][course][mode]);
 
 	if (teleports == 0)	

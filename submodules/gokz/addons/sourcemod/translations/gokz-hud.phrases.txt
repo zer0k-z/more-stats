@@ -63,6 +63,34 @@
 		"chi"		"{grey}你现在屏蔽了你的武器显示."
 		"ru"		"{grey}Теперь вы скрыли свое оружие."
 	}
+	"Option - Show Controls - Enable"
+	{
+		"en"		"{grey}Replay controls are now shown, when available."
+	}
+	"Option - Show Controls - Disable"
+	{
+		"en"		"{grey}Replay controls are now hidden."
+	}
+	"Option - Dead Strafe - Enable"
+	{
+		"en"		"{grey}The speed text now indicates period with low airstrafe gain."
+	}
+	"Option - Dead Strafe - Disable"
+	{
+		"en"		"{grey}Dead strafe period indicator disabled."
+	}
+	"Option - Show Spectators - Disable"
+	{
+		"en"		"{grey}Spectators are now not shown."
+	}
+	"Option - Show Spectators - Number"
+	{
+		"en"		"{grey}Number of spectators is now shown."
+	}
+	"Option - Show Spectators - Full"
+	{
+		"en"		"{grey}Number and names of spectators are now shown."
+	}
 
 
 	// =====[ INFO PANEL ]=====
@@ -99,6 +127,16 @@
 
 
 	// =====[ TELEPORT MENU ]=====
+	"TP Menu - Spectators - Full"
+	{
+		"#format"	"{1:d},{2:s}"
+		"en"		"Specs ({1}):\n{2}"
+	}
+	"TP Menu - Spectators - Number"
+	{
+		"#format"	"{1:d}"
+		"en"		"Specs: {1}"
+	}
 	"TP Menu - Checkpoint"
 	{
 		"en"		"Checkpoint"
@@ -159,6 +197,11 @@
 		"chi"		"重生"
 		"ru"		"Респавн"
 	}
+	"TP Menu - Spectator Teleports"
+	{
+		"#format"	"{1:d}"
+		"en"		"Teleports: {1}"
+	}
 
 
 	// =====[ OPTIONS MENU ]=====
@@ -207,11 +250,35 @@
 		"chi"		"空速文字"
 		"ru"		"Текст скорости"
 	}
+	"Options Menu - Dead Strafe Indicator"
+	{
+		"en"		"Dead strafe period"
+	}
 	"Options Menu - Show Weapon"
 	{
 		"en"		"Show weapon"
 		"chi"		"屏蔽武器显示"
 		"ru"		"Показать оружие"
+	}
+	"Options Menu - Show Controls"
+	{
+		"en"		"Show replay controls"
+	}
+	"Options Menu - Update Rate"
+	{
+		"en"		"Update rate"
+	}
+	"Options Menu - Show Spectators"
+	{
+		"en"		"Show spectators"
+	}
+	"Options Menu - Number"
+	{
+		"en"		"Number"
+	}
+	"Options Menu - Number and Names"
+	{
+		"en"		"Number and Names"
 	}
 
 
