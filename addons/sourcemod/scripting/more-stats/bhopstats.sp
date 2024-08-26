@@ -295,6 +295,26 @@ void GOKZ_OnTimerStart_Post_BhopStats(int client)
 
 }
 
+public Action Movement_OnPlayerMovePre(int client, float origin[3], float velocity[3])
+{
+	gB_WalkMoveCalled[client] = false;
+	return Plugin_Continue;
+}
+public Action Movement_OnWalkMovePre(int client, float origin[3], float velocity[3])
+{
+	gI_GroundTicks[client]++;
+	return Plugin_Continue;
+}
+
+public Action Movement_OnPlayerMovePost(int client, float origin[3], float velocity[3])
+{
+	if (!gB_WalkMoveCalled[client])
+	{
+		gI_GroundTicks[client] = 0;
+	}
+	return Plugin_Continue;
+}
+
 void Movement_OnJumpPost_BhopStats(int client)
 {
 	if (gCV_sv_autobunnyhopping.BoolValue)
@@ -307,6 +327,7 @@ void Movement_OnJumpPost_BhopStats(int client)
 	{
 		IncrementVariable(client, gI_GOKZPerfCount[client][GOKZ_GetCoreOption(client, Option_Mode)]);
 	}
+	/*
 	int landingTick = Movement_GetLandingTick(client);
 	int groundTicks = gI_TickCount[client] - landingTick - 1;
 	// Jumpbug/Triggerhop perfs
@@ -314,6 +335,8 @@ void Movement_OnJumpPost_BhopStats(int client)
 	{
 		groundTicks = 0;
 	}
+	*/
+	int groundTicks = gI_GroundTicks[client];
 	// Scroll stats
 	if (groundTicks >= 0 && groundTicks < MAX_BHOP_TICKS)
 	{
