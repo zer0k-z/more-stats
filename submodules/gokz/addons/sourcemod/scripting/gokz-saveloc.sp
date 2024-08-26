@@ -9,7 +9,7 @@
 #undef REQUIRE_EXTENSIONS
 #undef REQUIRE_PLUGIN
 #include <updater>
-
+#include <gokz/hud>
 #pragma newdecls required
 #pragma semicolon 1
 
@@ -19,11 +19,11 @@ public Plugin myinfo =
 	author = "JWL", 
 	description = "Allows players to save/load locations that preserve position, angles, and velocity", 
 	version = GOKZ_VERSION, 
-	url = "https://bitbucket.org/kztimerglobalteam/gokz"
+	url = GOKZ_SOURCE_URL
 };
 
 #define UPDATER_URL GOKZ_UPDATER_BASE_URL..."gokz-saveloc.txt"
-
+#define LOADLOC_INVALIDATE_DURATION 0.12
 #define MAX_LOCATION_NAME_LENGTH 32
 
 enum struct Location {
@@ -41,6 +41,7 @@ enum struct Location {
 	ArrayList undoTeleportData;
 
 	// Movement related states
+	int groundEnt;
 	int flags;
 	float position[3];
 	float angles[3];
@@ -57,10 +58,12 @@ enum struct Location {
 	float waterJumpTime;
 	bool hasWalkMovedSinceLastJump;
 	float ignoreLadderJumpTimeOffset;
+	float lastPositionAtFullCrouchSpeed[2];
 
 	void Create(int client, int target)
 	{
 		GetClientName(client, this.locationCreator, sizeof(Location::locationCreator));
+		this.groundEnt = GetEntPropEnt(target, Prop_Data, "m_hGroundEntity");
 		this.flags = GetEntityFlags(target);
 		this.mode = GOKZ_GetCoreOption(target, Option_Mode);
 		this.course = GOKZ_GetCourse(target);
@@ -79,7 +82,8 @@ enum struct Location {
 		this.waterJumpTime = GetEntPropFloat(target, Prop_Data, "m_flWaterJumpTime");
 		this.hasWalkMovedSinceLastJump = !!GetEntProp(target, Prop_Data, "m_bHasWalkMovedSinceLastJump");
 		this.ignoreLadderJumpTimeOffset = GetEntPropFloat(target, Prop_Data, "m_ignoreLadderJumpTime") - GetGameTime();
-
+		GetLastPositionAtFullCrouchSpeed(target, this.lastPositionAtFullCrouchSpeed);
+		
 		if (GOKZ_GetTimerRunning(target))
 		{
 			this.currentTime = GOKZ_GetTime(target);
@@ -96,6 +100,13 @@ enum struct Location {
 
 	bool Load(int client)
 	{
+		// Safeguard Check
+		if (GOKZ_GetCoreOption(client, Option_Safeguard) > Safeguard_Disabled && GOKZ_GetTimerRunning(client) && GOKZ_GetValidTimer(client))
+		{
+			GOKZ_PrintToChat(client, true, "%t", "Safeguard - Blocked");
+			GOKZ_PlayErrorSound(client);
+			return false;
+		}
 		if (!GOKZ_SetMode(client, this.mode))
 		{
 			GOKZ_PrintToChat(client, true, "%t", "LoadLoc - Mode Not Available");
@@ -110,6 +121,7 @@ enum struct Location {
 		GOKZ_SetTeleportCount(client, this.teleportCount);
 		GOKZ_SetUndoTeleportData(client, this.undoTeleportData, GOKZ_CHECKPOINT_VERSION);
 
+		SetEntPropEnt(client, Prop_Data, "m_hGroundEntity", this.groundEnt);
 		SetEntityFlags(client, this.flags);
 		TeleportEntity(client, this.position, this.angles, this.velocity);
 		SetEntPropFloat(client, Prop_Send, "m_flDuckAmount", this.duckAmount);
@@ -124,6 +136,7 @@ enum struct Location {
 		SetEntPropFloat(client, Prop_Data, "m_flWaterJumpTime", this.waterJumpTime);
 		SetEntProp(client, Prop_Data, "m_bHasWalkMovedSinceLastJump", this.hasWalkMovedSinceLastJump);
 		SetEntPropFloat(client, Prop_Data, "m_ignoreLadderJumpTime", this.ignoreLadderJumpTimeOffset + GetGameTime());
+		SetLastPositionAtFullCrouchSpeed(client, this.lastPositionAtFullCrouchSpeed);
 
 		GOKZ_InvalidateRun(client);
 		return true;
@@ -134,8 +147,9 @@ ArrayList gA_Locations;
 bool gB_LocMenuOpen[MAXPLAYERS + 1];
 bool gB_UsedLoc[MAXPLAYERS + 1];
 int gI_MostRecentLocation[MAXPLAYERS + 1];
+float gF_LastLoadlocTime[MAXPLAYERS + 1];
 
-
+bool gB_GOKZHUD;
 
 // =====[ PLUGIN EVENTS ]=====
 
@@ -147,6 +161,7 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 
 public void OnPluginStart()
 {
+	LoadTranslations("gokz-common.phrases");
 	LoadTranslations("gokz-saveloc.phrases");
 	
 	HookEvents();
@@ -160,6 +175,7 @@ public void OnAllPluginsLoaded()
 	{
 		Updater_AddPlugin(UPDATER_URL);
 	}
+	gB_GOKZHUD = LibraryExists("gokz-hud");
 }
 
 public void OnLibraryAdded(const char[] name)
@@ -168,6 +184,12 @@ public void OnLibraryAdded(const char[] name)
 	{
 		Updater_AddPlugin(UPDATER_URL);
 	}
+	gB_GOKZHUD = gB_GOKZHUD || StrEqual(name, "gokz-hud");
+}
+
+public void OnLibraryRemoved(const char[] name)
+{
+	gB_GOKZHUD = gB_GOKZHUD && !StrEqual(name, "gokz-hud");
 }
 
 public void OnMapStart()
@@ -178,6 +200,11 @@ public void OnMapStart()
 
 
 // =====[ CLIENT EVENTS ]=====
+
+public void OnClientPutInServer(int client)
+{
+	gF_LastLoadlocTime[client] = 0.0;
+}
 
 public void OnPlayerDeath(Event event, const char[] name, bool dontBroadcast)
 {
@@ -201,6 +228,11 @@ public Action GOKZ_OnTimerStart(int client, int course)
 {
 	CloseLocMenu(client);
 	gB_UsedLoc[client] = false;
+	if (GetGameTime() < gF_LastLoadlocTime[client] + LOADLOC_INVALIDATE_DURATION)
+	{
+		return Plugin_Stop;
+	}
+	return Plugin_Continue;
 }
 
 public Action GOKZ_OnTimerEnd(int client, int course, float time)
@@ -325,7 +357,10 @@ public Action Command_LoadLoc(int client, int args)
 		
 		if (IsValidLocationId(id))
 		{
-			LoadLocation(client, id);
+			if (LoadLocation(client, id))
+			{
+				gF_LastLoadlocTime[client] = GetGameTime();
+			}
 		}
 		else
 		{
@@ -605,6 +640,14 @@ bool LoadLocation(int client, int id)
 	if (loc.Load(client))
 	{
 		gB_UsedLoc[client] = true;
+		if (gB_GOKZHUD)
+		{
+			GOKZ_HUD_ForceUpdateTPMenu(client);
+		}
+	}
+	else
+	{
+		return false;
 	}
 	// print message if loading new location
 	if (gI_MostRecentLocation[client] != id)
@@ -714,6 +757,21 @@ bool IsClientLocationCreator(int client, int id)
 	
 	return StrEqual(clientName, loc.locationCreator);
 } 
+
+void GetLastPositionAtFullCrouchSpeed(int client, float origin[2])
+{
+	// m_vecLastPositionAtFullCrouchSpeed is right after m_flDuckSpeed.
+	int baseOffset = FindSendPropInfo("CBasePlayer", "m_flDuckSpeed");
+	origin[0] = GetEntDataFloat(client, baseOffset + 4);
+	origin[1] = GetEntDataFloat(client, baseOffset + 8);
+}
+
+void SetLastPositionAtFullCrouchSpeed(int client, float origin[2])
+{
+	int baseOffset = FindSendPropInfo("CBasePlayer", "m_flDuckSpeed");
+	SetEntDataFloat(client, baseOffset + 4, origin[0]);
+	SetEntDataFloat(client, baseOffset + 8, origin[1]);
+}
 
 // ====[ PRIVATE ]====
 

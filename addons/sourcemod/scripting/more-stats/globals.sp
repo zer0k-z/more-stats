@@ -6,6 +6,8 @@ public bool gB_BhopStatsLoaded[MAXPLAYERS + 1];
 public int gI_TickCount[MAXPLAYERS + 1];
 public int gI_CmdNum[MAXPLAYERS + 1];
 public int gI_LastPlusJumpCmdNum[MAXPLAYERS + 1];
+public bool gB_WalkMoveCalled[MAXPLAYERS + 1];
+public int gI_GroundTicks[MAXPLAYERS + 1];
 public bool gB_ChatScrollStats[MAXPLAYERS + 1];
 public bool gB_Scrolling[MAXPLAYERS + 1];
 public int gI_ScrollGroundTicks[MAXPLAYERS + 1];

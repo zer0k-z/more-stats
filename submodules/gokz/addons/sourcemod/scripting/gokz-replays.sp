@@ -3,6 +3,7 @@
 #include <cstrike>
 #include <sdkhooks>
 #include <sdktools>
+#include <dhooks>
 
 #include <movementapi>
 
@@ -30,17 +31,23 @@ public Plugin myinfo =
 	author = "DanZay", 
 	description = "Records runs to disk and allows playback using bots", 
 	version = GOKZ_VERSION, 
-	url = "https://bitbucket.org/kztimerglobalteam/gokz"
+	url = GOKZ_SOURCE_URL
 };
 
 #define UPDATER_URL GOKZ_UPDATER_BASE_URL..."gokz-replays.txt"
 
+bool gB_GOKZHUD;
 bool gB_GOKZLocalDB;
 char gC_CurrentMap[64];
 int gI_CurrentMapFileSize;
 bool gB_HideNameChange;
 bool gB_NubRecordMissed[MAXPLAYERS + 1];
 ArrayList g_ReplayInfoCache;
+Address gA_BotDuckAddr;
+int gI_BotDuckPatchRestore[40]; // Size of patched section in gamedata
+int gI_BotDuckPatchLength;
+
+DynamicDetour gH_DHooks_TeamFull;
 
 #include "gokz-replays/commands.sp"
 #include "gokz-replays/nav.sp"
@@ -64,6 +71,7 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 
 public void OnPluginStart()
 {
+	LoadTranslations("gokz-common.phrases");
 	LoadTranslations("gokz-replays.phrases");
 	
 	CreateGlobalForwards();
@@ -78,7 +86,8 @@ public void OnAllPluginsLoaded()
 		Updater_AddPlugin(UPDATER_URL);
 	}
 	gB_GOKZLocalDB = LibraryExists("gokz-localdb");
-	
+	gB_GOKZHUD = LibraryExists("gokz-hud");
+
 	for (int client = 1; client <= MaxClients; client++)
 	{
 		if (IsClientInGame(client))
@@ -95,14 +104,27 @@ public void OnLibraryAdded(const char[] name)
 		Updater_AddPlugin(UPDATER_URL);
 	}
 	gB_GOKZLocalDB = gB_GOKZLocalDB || StrEqual(name, "gokz-localdb");
+	gB_GOKZHUD = gB_GOKZHUD || StrEqual(name, "gokz-hud");
 }
 
 public void OnLibraryRemoved(const char[] name)
 {
 	gB_GOKZLocalDB = gB_GOKZLocalDB && !StrEqual(name, "gokz-localdb");
+	gB_GOKZHUD = gB_GOKZHUD && !StrEqual(name, "gokz-hud");
 }
 
-
+public void OnPluginEnd()
+{
+	// Restore bot auto duck behavior.
+	if (gA_BotDuckAddr == Address_Null)
+	{
+		return;
+	}
+	for (int i = 0; i < gI_BotDuckPatchLength; i++)
+	{
+		StoreToAddress(gA_BotDuckAddr + view_as<Address>(i), gI_BotDuckPatchRestore[i], NumberType_Int8);
+	}
+}
 
 // =====[ OTHER EVENTS ]=====
 
@@ -124,6 +146,8 @@ public void OnConfigsExecuted()
 	FindConVar("bot_zombie").BoolValue = true;
 	FindConVar("bot_join_after_player").BoolValue = false;
 	FindConVar("bot_quota_mode").SetString("normal");
+	FindConVar("bot_quota").Flags &= ~FCVAR_NOTIFY;
+	FindConVar("bot_quota").Flags &= ~FCVAR_REPLICATED;
 }
 
 public void OnEntityCreated(int entity, const char[] classname)
@@ -172,7 +196,11 @@ public Action Hook_SayText2(UserMsg msg_id, any msg, const int[] players, int pl
 	return Plugin_Continue;
 }
 
-
+public MRESReturn DHooks_OnTeamFull_Pre(Address pThis, DHookReturn hReturn, DHookParam hParams)
+{
+	DHookSetReturn(hReturn, false);
+	return MRES_Supercede;
+}
 
 // =====[ CLIENT EVENTS ]=====
 
@@ -195,12 +223,17 @@ public void OnClientDisconnect(int client)
 
 public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3], float angles[3], int &weapon, int &subtype, int &cmdnum, int &tickcount, int &seed, int mouse[2])
 {
-	OnPlayerRunCmd_Playback(client, buttons);
-	return Plugin_Continue;
+	if (!IsFakeClient(client))
+	{
+		return Plugin_Continue;
+	}
+	OnPlayerRunCmd_Playback(client, buttons, vel, angles);
+	return Plugin_Changed;
 }
 
 public void OnPlayerRunCmdPost(int client, int buttons, int impulse, const float vel[3], const float angles[3], int weapon, int subtype, int cmdnum, int tickcount, int seed, const int mouse[2])
 {
+	OnPlayerRunCmdPost_Playback(client);
 	OnPlayerRunCmdPost_Recording(client, buttons, tickcount, vel, mouse);
 	OnPlayerRunCmdPost_ReplayControls(client, cmdnum);
 }
@@ -266,14 +299,41 @@ public void GOKZ_DB_OnJumpstatPB(int client, int jumptype, int mode, float dista
 	GOKZ_DB_OnJumpstatPB_Recording(client, jumptype, distance, block, strafes, sync, pre, max, airtime);
 }
 
-
+public void GOKZ_OnOptionsLoaded(int client)
+{
+	if (IsFakeClient(client))
+	{
+		GOKZ_OnOptionsLoaded_Playback(client);
+	}
+}
 
 // =====[ PRIVATE ]=====
-
 
 static void HookEvents()
 {
 	HookUserMessage(GetUserMessageId("SayText2"), Hook_SayText2, true);
+	GameData gameData = LoadGameConfigFile("gokz-replays.games");
+
+	gH_DHooks_TeamFull = DynamicDetour.FromConf(gameData, "CCSGameRules::TeamFull");
+	if (gH_DHooks_TeamFull == INVALID_HANDLE)
+	{
+		SetFailState("Failed to find CCSGameRules::TeamFull function signature");
+	}
+	
+	if (!gH_DHooks_TeamFull.Enable(Hook_Pre, DHooks_OnTeamFull_Pre))
+	{
+		SetFailState("Failed to enable detour on CCSGameRules::TeamFull");
+	}
+
+	// Remove bot auto duck behavior.
+	gA_BotDuckAddr = gameData.GetAddress("BotDuck");
+	gI_BotDuckPatchLength = gameData.GetOffset("BotDuckPatchLength");
+	for (int i = 0; i < gI_BotDuckPatchLength; i++)
+	{
+		gI_BotDuckPatchRestore[i] = LoadFromAddress(gA_BotDuckAddr + view_as<Address>(i), NumberType_Int8);
+		StoreToAddress(gA_BotDuckAddr + view_as<Address>(i), 0x90, NumberType_Int8);
+	}
+	delete gameData;
 }
 
 static void UpdateCurrentMap()
@@ -281,7 +341,6 @@ static void UpdateCurrentMap()
 	GetCurrentMapDisplayName(gC_CurrentMap, sizeof(gC_CurrentMap));
 	gI_CurrentMapFileSize = GetCurrentMapFileSize();
 }
-
 
 
 // =====[ PUBLIC ]=====

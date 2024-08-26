@@ -59,7 +59,8 @@ bool TimerStart(int client, int course, bool allowMidair = false, bool playSound
 		 || JustNoclipped(client)
 		 || !IsPlayerValidMoveType(client)
 		 || !allowMidair && (!Movement_GetOnGround(client) || JustLanded(client))
-		 || allowMidair && !Movement_GetOnGround(client) && (!GOKZ_GetValidJump(client) || GOKZ_GetHitPerf(client)))
+		 || allowMidair && !Movement_GetOnGround(client) && (!GOKZ_GetValidJump(client) || GOKZ_GetHitPerf(client))
+		 || (GOKZ_GetTimerRunning(client) && GOKZ_GetCourse(client) != course))
 	{
 		return false;
 	}
@@ -72,12 +73,6 @@ bool TimerStart(int client, int course, bool allowMidair = false, bool playSound
 		return false;
 	}
 
-	// Unpause the player, if they're paused
-	if (GOKZ_GetPaused(client))
-	{
-		GOKZ_Resume(client);
-	}
-	
 	// Prevent noclip exploit
 	SetEntProp(client, Prop_Send, "m_CollisionGroup", GOKZ_COLLISION_GROUP_STANDARD);
 
@@ -184,8 +179,8 @@ void PlayTimerStartSound(int client)
 {
 	if (GetGameTime() - lastStartSoundTime[client] > GOKZ_TIMER_SOUND_COOLDOWN)
 	{
-		EmitSoundToClient(client, gC_ModeStartSounds[GOKZ_GetCoreOption(client, Option_Mode)]);
-		EmitSoundToClientSpectators(client, gC_ModeStartSounds[GOKZ_GetCoreOption(client, Option_Mode)]);
+		GOKZ_EmitSoundToClient(client, gC_ModeStartSounds[GOKZ_GetCoreOption(client, Option_Mode)], _, "Timer Start");
+		GOKZ_EmitSoundToClientSpectators(client, gC_ModeStartSounds[GOKZ_GetCoreOption(client, Option_Mode)], _, "Timer Start");
 		lastStartSoundTime[client] = GetGameTime();
 	}
 }
@@ -306,8 +301,8 @@ static bool JustEndedTimer(int client)
 
 static void PlayTimerEndSound(int client)
 {
-	EmitSoundToClient(client, gC_ModeEndSounds[GOKZ_GetCoreOption(client, Option_Mode)]);
-	EmitSoundToClientSpectators(client, gC_ModeEndSounds[GOKZ_GetCoreOption(client, Option_Mode)]);
+	GOKZ_EmitSoundToClient(client, gC_ModeEndSounds[GOKZ_GetCoreOption(client, Option_Mode)], _, "Timer End");
+	GOKZ_EmitSoundToClientSpectators(client, gC_ModeEndSounds[GOKZ_GetCoreOption(client, Option_Mode)], _, "Timer End");
 }
 
 static void PlayTimerFalseEndSound(int client)
@@ -315,15 +310,15 @@ static void PlayTimerFalseEndSound(int client)
 	if (!JustEndedTimer(client)
 		 && (GetGameTime() - lastFalseEndTime[client]) > GOKZ_TIMER_SOUND_COOLDOWN)
 	{
-		EmitSoundToClient(client, gC_ModeFalseEndSounds[GOKZ_GetCoreOption(client, Option_Mode)]);
-		EmitSoundToClientSpectators(client, gC_ModeFalseEndSounds[GOKZ_GetCoreOption(client, Option_Mode)]);
+		GOKZ_EmitSoundToClient(client, gC_ModeFalseEndSounds[GOKZ_GetCoreOption(client, Option_Mode)], _, "Timer False End");
+		GOKZ_EmitSoundToClientSpectators(client, gC_ModeFalseEndSounds[GOKZ_GetCoreOption(client, Option_Mode)], _, "Timer False End");
 	}
 }
 
 static void PlayTimerStopSound(int client)
 {
-	EmitSoundToClient(client, GOKZ_SOUND_TIMER_STOP);
-	EmitSoundToClientSpectators(client, GOKZ_SOUND_TIMER_STOP);
+	GOKZ_EmitSoundToClient(client, GOKZ_SOUND_TIMER_STOP, _, "Timer Stop");
+	GOKZ_EmitSoundToClientSpectators(client, GOKZ_SOUND_TIMER_STOP, _, "Timer Stop");
 }
 
 static void PrintEndTimeString(int client)

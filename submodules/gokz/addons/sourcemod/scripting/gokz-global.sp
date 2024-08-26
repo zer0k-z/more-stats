@@ -30,7 +30,7 @@ public Plugin myinfo =
 	author = "DanZay", 
 	description = "Provides centralised records and bans via GlobalAPI", 
 	version = GOKZ_VERSION, 
-	url = "https://bitbucket.org/kztimerglobalteam/gokz"
+	url = GOKZ_SOURCE_URL
 };
 
 #define UPDATER_URL GOKZ_UPDATER_BASE_URL..."gokz-global.txt"
@@ -83,7 +83,10 @@ public void OnPluginStart()
 	{
 		SetFailState("gokz-global currently only supports 128 tickrate servers.");
 	}
-	
+	if (FindCommandLineParam("-insecure") || FindCommandLineParam("-tools"))
+	{
+		SetFailState("gokz-global currently only supports VAC-secured servers.");
+	}
 	LoadTranslations("gokz-common.phrases");
 	LoadTranslations("gokz-global.phrases");
 	
@@ -203,7 +206,7 @@ public void FPSCheck(QueryCookie cookie, int client, ConVarQueryResult result, c
 				}
 				else
 				{
-					EmitSoundToClient(client, GOKZ_SOUND_TIMER_STOP);
+					GOKZ_EmitSoundToClient(client, GOKZ_SOUND_TIMER_STOP, _, "Timer Stop");
 				}
 			}
 		}
@@ -239,6 +242,7 @@ Action FPSKickPlayer(Handle timer, int userid)
 
 public void OnClientPutInServer(int client)
 {
+	gB_GloballyVerified[client] = false;
 	gB_waitingForFPSKick[client] = false;
 	OnClientPutInServer_PrintRecords(client);
 }
@@ -293,12 +297,14 @@ public void GOKZ_OnTimerEnd_Post(int client, int course, float time, int telepor
 	}
 }
 
-public void GOKZ_RP_OnReplaySaved(int client, int replayType, const char[] map, int course, int timeType, float time, const char[] filePath)
+public Action GOKZ_RP_OnReplaySaved(int client, int replayType, const char[] map, int course, int timeType, float time, const char[] filePath, bool tempReplay)
 {
 	if (gB_GloballyVerified[client] && gB_InValidRun[client])
 	{
-		OnReplaySaved_SendReplay(client, replayType, map, course, timeType, time, filePath);
+		OnReplaySaved_SendReplay(client, replayType, map, course, timeType, time, filePath, tempReplay);
+		return Plugin_Handled;
 	}
+	return Plugin_Continue;
 }
 
 public void GOKZ_OnRunInvalidated(int client)
@@ -368,7 +374,7 @@ public void OnMapEnd()
 public void GOKZ_OnOptionChanged(int client, const char[] option, any newValue)
 {
 	if (StrEqual(option, gC_CoreOptionNames[Option_Mode])
-		&& GlobalAPI_IsInit())
+		&& GlobalAPI_IsInit() && IsClientAuthorized(client))
 	{
 		UpdatePoints(client);
 	}
@@ -518,7 +524,7 @@ void AnnounceNewTopTime(int client, int course, int mode, int timeType, int rank
 
 void PlayBeatRecordSound()
 {
-	EmitSoundToAll(GL_SOUND_NEW_RECORD);
+	GOKZ_EmitSoundToAll(GL_SOUND_NEW_RECORD, _, "World Record");
 }
 
 
@@ -604,7 +610,7 @@ public int GetAuthStatusCallback(JSON_Object auth_json, GlobalAPIRequestData req
 	if (request.Failure)
 	{
 		LogError("Failed to check API key with Global API.");
-		return;
+		return 0;
 	}
 	
 	APIAuth auth = view_as<APIAuth>(auth_json);
@@ -613,6 +619,7 @@ public int GetAuthStatusCallback(JSON_Object auth_json, GlobalAPIRequestData req
 		LogError("Global API key was found to be missing or invalid.");
 	}
 	gB_APIKeyCheck = auth.IsValid;
+	return 0;
 }
 
 public int GetModeInfoCallback(JSON_Object modes, GlobalAPIRequestData request)
@@ -620,13 +627,13 @@ public int GetModeInfoCallback(JSON_Object modes, GlobalAPIRequestData request)
 	if (request.Failure)
 	{
 		LogError("Failed to check mode versions with Global API.");
-		return;
+		return 0;
 	}
 	
 	if (!modes.IsArray)
 	{
 		LogError("GlobalAPI returned a malformed response while looking up the modes.");
-		return;
+		return 0;
 	}
 	
 	for (int i = 0; i < modes.Length; i++)
@@ -651,6 +658,7 @@ public int GetModeInfoCallback(JSON_Object modes, GlobalAPIRequestData request)
 				gC_ModeNames[mode_id], mode.LatestVersion, desc, GOKZ_GetModeVersion(mode_id), GOKZ_VERSION);
 		}
 	}
+	return 0;
 }
 
 public int GetMapCallback(JSON_Object map_json, GlobalAPIRequestData request)
@@ -658,7 +666,7 @@ public int GetMapCallback(JSON_Object map_json, GlobalAPIRequestData request)
 	if (request.Failure || map_json == INVALID_HANDLE)
 	{
 		LogError("Failed to get map info.");
-		return;
+		return 0;
 	}
 	
 	APIMap map = view_as<APIMap>(map_json);
@@ -676,6 +684,7 @@ public int GetMapCallback(JSON_Object map_json, GlobalAPIRequestData request)
 			UpdatePoints(client);
 		}
 	}
+	return 0;
 }
 
 void CheckClientGlobalBan(int client)

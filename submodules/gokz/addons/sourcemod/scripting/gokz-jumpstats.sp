@@ -25,7 +25,7 @@ public Plugin myinfo =
 	author = "DanZay", 
 	description = "Tracks and outputs movement statistics", 
 	version = GOKZ_VERSION, 
-	url = "https://bitbucket.org/kztimerglobalteam/gokz"
+	url = GOKZ_SOURCE_URL
 };
 
 #define UPDATER_URL GOKZ_UPDATER_BASE_URL..."gokz-jumpstats.txt"
@@ -61,6 +61,7 @@ public void OnPluginStart()
 	CreateGlobalForwards();
 	RegisterCommands();
 	
+	OnPluginStart_JumpTracking();
 	OnPluginStart_JumpValidating();
 }
 
@@ -111,19 +112,15 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 	return Plugin_Continue;
 }
 
-public void OnPlayerRunCmdPost(int client, int buttons, int impulse, const float vel[3], const float angles[3], int weapon, int subtype, int cmdnum, int tickcount, int seed, const int mouse[2])
+public Action Movement_OnPlayerMovePost(int client)
 {
-	OnPlayerRunCmdPost_JumpTracking(client);
+	Movement_OnPlayerMovePost_JumpTracking(client);
+	return Plugin_Continue;
 }
 
 public void Movement_OnStartTouchGround(int client)
 {
 	OnStartTouchGround_JumpTracking(client);
-}
-
-public void Movement_OnChangeMovetype(int client, MoveType oldMovetype, MoveType newMovetype)
-{
-	OnChangeMovetype_JumpTracking(client, oldMovetype, newMovetype);
 }
 
 public void GOKZ_OnJumpInvalidated(int client)
@@ -164,7 +161,7 @@ public void GOKZ_JS_OnFailstatAlways(Jump jump)
 
 public void SDKHook_StartTouch_Callback(int client, int touched) // SDKHook_StartTouchPost
 {
-	OnStartTouch_JumpTracking(client);
+	OnStartTouch_JumpTracking(client, touched);
 }
 
 public void SDKHook_Touch_CallBack(int client, int touched)
@@ -174,7 +171,7 @@ public void SDKHook_Touch_CallBack(int client, int touched)
 
 public void SDKHook_EndTouch_Callback(int client, int touched) // SDKHook_EndTouchPost
 {
-	OnEndTouch_JumpTracking(client);
+	OnEndTouch_JumpTracking(client, touched);
 }
 
 public void GOKZ_OnTeleport(int client)
@@ -217,4 +214,4 @@ static void HookClientEvents(int client)
 	SDKHook(client, SDKHook_StartTouchPost, SDKHook_StartTouch_Callback);
 	SDKHook(client, SDKHook_TouchPost, SDKHook_Touch_CallBack);
 	SDKHook(client, SDKHook_EndTouchPost, SDKHook_EndTouch_Callback);
-} 
+}

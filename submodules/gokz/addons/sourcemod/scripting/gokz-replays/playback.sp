@@ -15,6 +15,10 @@ static ArrayList playbackTickData[RP_MAX_BOTS];
 static bool inBreather[RP_MAX_BOTS];
 static float breatherStartTime[RP_MAX_BOTS];
 
+// Original bot caller, needed for OnClientPutInServer callback
+static int botCaller[RP_MAX_BOTS];
+// Original bot name after creation by bot_add, needed for bot removal
+static char botName[RP_MAX_BOTS][MAX_NAME_LENGTH];
 static bool botInGame[RP_MAX_BOTS];
 static int botClient[RP_MAX_BOTS];
 static bool botDataLoaded[RP_MAX_BOTS];
@@ -40,6 +44,7 @@ static int timeInAir[RP_MAX_BOTS];
 static int botTeleportsUsed[RP_MAX_BOTS];
 static int botCurrentTeleport[RP_MAX_BOTS];
 static int botButtons[RP_MAX_BOTS];
+static MoveType botMoveType[RP_MAX_BOTS];
 static float botTakeoffSpeed[RP_MAX_BOTS];
 static float botSpeed[RP_MAX_BOTS];
 static float botLastOrigin[RP_MAX_BOTS][3];
@@ -47,6 +52,7 @@ static bool hitBhop[RP_MAX_BOTS];
 static bool hitPerf[RP_MAX_BOTS];
 static bool botJumped[RP_MAX_BOTS];
 static bool botIsTakeoff[RP_MAX_BOTS];
+static bool botJustTeleported[RP_MAX_BOTS];
 static float botLandingSpeed[RP_MAX_BOTS];
 
 
@@ -56,6 +62,16 @@ static float botLandingSpeed[RP_MAX_BOTS];
 // Returns the client index of the replay bot, or -1 otherwise
 int LoadReplayBot(int client, char[] path)
 {
+	// Safeguard Check
+	if (GOKZ_GetCoreOption(client, Option_Safeguard) > Safeguard_Disabled && GOKZ_GetTimerRunning(client) && GOKZ_GetValidTimer(client))
+	{
+		if (!GOKZ_GetPaused(client) && !GOKZ_GetCanPause(client))
+		{
+			GOKZ_PrintToChat(client, true, "%t", "Safeguard - Blocked");
+			GOKZ_PlayErrorSound(client);
+			return -1;
+		}
+	}
 	int bot;
 	if (GetBotsInUse() < RP_MAX_BOTS)
 	{
@@ -81,9 +97,9 @@ int LoadReplayBot(int client, char[] path)
 		GOKZ_PlayErrorSound(client);
 		return -1;
 	}
-
-	SetBotStuff(bot);
-	MakePlayerSpectate(client, botClient[bot]);
+	
+	ServerCommand("bot_add");
+	botCaller[bot] = client;
 	return botClient[bot];
 }
 
@@ -105,7 +121,7 @@ void GetPlaybackState(int client, HUDInfo info)
 	info.TimerRunning = botReplayType[bot] == ReplayType_Jump ? false : true;
 	if (botReplayVersion[bot] == 1)
 	{
-		info.Time = botTime[bot];
+		info.Time = playbackTick[bot]  * GetTickInterval();
 	}
 	else if (botReplayVersion[bot] == 2)
 	{
@@ -122,10 +138,11 @@ void GetPlaybackState(int client, HUDInfo info)
 			info.Time = (playbackTick[bot] - preAndPostRunTickCount) * GetTickInterval();
 		}
 	}
+	info.TimerRunning = true;
 	info.TimeType = botTeleportsUsed[bot] > 0 ? TimeType_Nub : TimeType_Pro;
 	info.Speed = botSpeed[bot];
 	info.Paused = false;
-	info.OnLadder = false;
+	info.OnLadder = (botMoveType[bot] == MOVETYPE_LADDER);
 	info.Noclipping = false;
 	info.OnGround = Movement_GetOnGround(client);
 	info.Ducking = botButtons[bot] & IN_DUCK > 0;
@@ -205,7 +222,7 @@ void TrySkipToTime(int client, int seconds)
 		return;
 	}
 	
-	int tick = seconds * 128;
+	int tick = seconds * 128 + preAndPostRunTickCount;
 	int bot = GetBotFromClient(GetObserverTarget(client));
 	
 	if (tick >= 0 && tick < playbackTickData[bot].Length)
@@ -224,7 +241,7 @@ float GetPlaybackTime(int bot)
 	{
 		return 0.0;
 	}
-	if (playbackTick[bot] >= playbackTickData[bot].Length - (preAndPostRunTickCount * 2))
+	if (playbackTick[bot] >= playbackTickData[bot].Length - preAndPostRunTickCount)
 	{
 		return botTime[bot];
 	}
@@ -250,10 +267,19 @@ void OnClientPutInServer_Playback(int client)
 	// Check if an unassigned bot has joined, and assign it
 	for (int bot; bot < RP_MAX_BOTS; bot++)
 	{
-		if (!botInGame[bot])
+		// Also check if the bot was created by us.
+		if (!botInGame[bot] && botCaller[bot] != 0)
 		{
 			botInGame[bot] = true;
 			botClient[bot] = client;
+			GetClientName(client, botName[bot], sizeof(botName[]));
+			// The bot won't receive its weapons properly if we don't wait a frame
+			RequestFrame(SetBotStuff, bot);
+			if (IsValidClient(botCaller[bot]))
+			{
+				MakePlayerSpectate(botCaller[bot], botClient[bot]);
+				botCaller[bot] = 0;
+			}
 			break;
 		}
 	}
@@ -277,7 +303,7 @@ void OnClientDisconnect_Playback(int client)
 	}
 }
 
-void OnPlayerRunCmd_Playback(int client, int &buttons)
+void OnPlayerRunCmd_Playback(int client, int &buttons, float vel[3], float angles[3])
 {
 	if (!IsFakeClient(client))
 	{
@@ -295,14 +321,41 @@ void OnPlayerRunCmd_Playback(int client, int &buttons)
 		switch (botReplayVersion[bot])
 		{
 			case 1: PlaybackVersion1(client, bot, buttons);
-			case 2: PlaybackVersion2(client, bot, buttons);
+			case 2: PlaybackVersion2(client, bot, buttons, vel, angles);
 		}
 		break;
 	}
 }
 
+void OnPlayerRunCmdPost_Playback(int client)
+{
+	for (int bot; bot < RP_MAX_BOTS; bot++)
+	{
+		// Check if not the bot we're looking for
+		if (!botInGame[bot] || botClient[bot] != client || !botDataLoaded[bot])
+		{
+			continue;
+		}
+		if (botReplayVersion[bot] == 2)
+		{
+			PlaybackVersion2Post(client, bot);
+		}
+		break;
+	}
+}
 
-
+void GOKZ_OnOptionsLoaded_Playback(int client)
+{
+	for (int bot = 0; bot < RP_MAX_BOTS; bot++)
+	{
+		if (botClient[bot] == client)
+		{
+			// Reset its movement options as it might be wrongfully changed
+			GOKZ_SetCoreOption(client, Option_Mode, botMode[bot]);
+			GOKZ_SetCoreOption(client, Option_Style, botStyle[bot]);
+		}
+	}
+}
 // =====[ PRIVATE ]=====
 
 // Returns false if there was a problem loading the playback e.g. doesn't exist
@@ -575,14 +628,14 @@ static bool LoadFormatVersion2Replay(File file, int client, int bot)
 		case ReplayType_Cheater:
 		{
 			// Reason
-			int ACReason;
-			file.ReadInt8(ACReason);
+			int reason;
+			file.ReadInt8(reason);
 			
 			// Type
 			botReplayType[bot] = ReplayType_Cheater;
 
 			// Finish spit to console
-			PrintToConsole(client, "AC Reason: %s", gC_ACReasons[ACReason]);
+			PrintToConsole(client, "AC Reason: %s", gC_ACReasons[reason]);
 		}
 		case ReplayType_Jump:
 		{
@@ -695,7 +748,7 @@ static void PlaybackVersion1(int client, int bot, int &buttons)
 			breatherStartTime[bot] = GetEngineTime();
 			if (playbackTick[bot] == (size - 1)) 
 			{
-				EmitSoundToClientSpectators(client, gC_ModeEndSounds[GOKZ_GetCoreOption(client, Option_Mode)]);
+				GOKZ_EmitSoundToClientSpectators(client, gC_ModeEndSounds[GOKZ_GetCoreOption(client, Option_Mode)], _, "Timer End");
 			}
 		}
 		else if (GetEngineTime() > breatherStartTime[bot] + RP_PLAYBACK_BREATHER_TIME)
@@ -705,7 +758,7 @@ static void PlaybackVersion1(int client, int bot, int &buttons)
 			botPlaybackPaused[bot] = false;
 			if (playbackTick[bot] == 0)
 			{
-				EmitSoundToClientSpectators(client, gC_ModeStartSounds[GOKZ_GetCoreOption(client, Option_Mode)]);
+				GOKZ_EmitSoundToClientSpectators(client, gC_ModeStartSounds[GOKZ_GetCoreOption(client, Option_Mode)], _, "Timer Start");
 			}
 			// Start the bot if first tick. Clear bot if last tick.
 			playbackTick[bot]++;
@@ -714,7 +767,7 @@ static void PlaybackVersion1(int client, int bot, int &buttons)
 				playbackTickData[bot].Clear(); // Clear it all out
 				botDataLoaded[bot] = false;
 				CancelReplayControlsForBot(bot);
-				KickClient(botClient[bot]);
+				ServerCommand("bot_kick %s", botName[bot]);
 			}
 		}
 	}
@@ -734,7 +787,7 @@ static void PlaybackVersion1(int client, int bot, int &buttons)
 			playbackTickData[bot].Clear();
 			botDataLoaded[bot] = false;
 			CancelReplayControlsForBot(bot);
-			KickClient(botClient[bot]);
+			ServerCommand("bot_kick %s", botName[bot]);
 			return;
 		}
 		
@@ -768,6 +821,7 @@ static void PlaybackVersion1(int client, int bot, int &buttons)
 		CopyVector(repOrigin, botLastOrigin[bot]);
 		
 		botSpeed[bot] = GetVectorHorizontalLength(velocity);
+		buttons = repButtons;
 		botButtons[bot] = repButtons;
 
 		// Should the bot be ducking?!
@@ -846,7 +900,7 @@ static void PlaybackVersion1(int client, int bot, int &buttons)
 		playbackTick[bot]++;
 	}
 }
-void PlaybackVersion2(int client, int bot, int &buttons)
+void PlaybackVersion2(int client, int bot, int &buttons, float vel[3], float angles[3])
 {
 	int size = playbackTickData[bot].Length;
 	ReplayTickData prevTickData;
@@ -879,7 +933,7 @@ void PlaybackVersion2(int client, int bot, int &buttons)
 				playbackTickData[bot].Clear(); // Clear it all out
 				botDataLoaded[bot] = false;
 				CancelReplayControlsForBot(bot);
-				KickClient(botClient[bot]);
+				ServerCommand("bot_kick %s", botName[bot]);
 			}
 		}
 	}
@@ -899,7 +953,7 @@ void PlaybackVersion2(int client, int bot, int &buttons)
 			playbackTickData[bot].Clear();
 			botDataLoaded[bot] = false;
 			CancelReplayControlsForBot(bot);
-			KickClient(botClient[bot]);
+			ServerCommand("bot_kick %s", botName[bot]);
 			return;
 		}
 		
@@ -917,85 +971,92 @@ void PlaybackVersion2(int client, int bot, int &buttons)
 		// Play timer start/end sound, if necessary. Reset teleports
 		if (playbackTick[bot] == preAndPostRunTickCount && botReplayType[bot] == ReplayType_Run)
 		{
-			EmitSoundToClientSpectators(client, gC_ModeStartSounds[GOKZ_GetCoreOption(client, Option_Mode)]);
+			GOKZ_EmitSoundToClientSpectators(client, gC_ModeStartSounds[GOKZ_GetCoreOption(client, Option_Mode)], _, "Timer Start");
 			botCurrentTeleport[bot] = 0;
 		}
 		if (playbackTick[bot] == botTimeTicks[bot] + preAndPostRunTickCount && botReplayType[bot] == ReplayType_Run)
 		{
-			EmitSoundToClientSpectators(client, gC_ModeEndSounds[GOKZ_GetCoreOption(client, Option_Mode)]);
+			GOKZ_EmitSoundToClientSpectators(client, gC_ModeEndSounds[GOKZ_GetCoreOption(client, Option_Mode)], _, "Timer End");
 		}
-
-		// Set velocity to travel from current origin to recorded origin
-		float currentOrigin[3], velocity[3];
-		Movement_GetOrigin(client, currentOrigin);
-		MakeVectorFromPoints(currentOrigin, currentTickData.origin, velocity);
-		ScaleVector(velocity, 1.0 / GetTickInterval());
-		TeleportEntity(client, NULL_VECTOR, currentTickData.angles, velocity);
+		// We use the previous position/velocity data to recreate sounds accurately.
+		// This might not be necessary as we already did do this in OnPlayerRunCmdPost of last tick,
+		// but we do it again just in case the values don't match up somehow (eg. collision with moving objects?)
+		TeleportEntity(client, NULL_VECTOR, prevTickData.angles, prevTickData.velocity);
+		// TeleportEntity does not set the absolute origin and velocity so we need to do it
+		// to prevent inaccurate eye position interpolation.
+		SetEntPropVector(client, Prop_Data, "m_vecVelocity", prevTickData.velocity);
+		SetEntPropVector(client, Prop_Data, "m_vecAbsVelocity", prevTickData.velocity);
 		
-		botSpeed[bot] = GetVectorHorizontalLength(currentTickData.velocity);
+		SetEntPropVector(client, Prop_Data, "m_vecAbsOrigin", prevTickData.origin);
+		SetEntPropVector(client, Prop_Data, "m_vecOrigin", prevTickData.origin);
 
-		// Set buttons
+
+		// Set buttons and potential inputs.
+		int newButtons;
 		if (currentTickData.flags & RP_IN_ATTACK)
 		{
-			buttons |= IN_ATTACK;
+			newButtons |= IN_ATTACK;
 		}
 		if (currentTickData.flags & RP_IN_ATTACK2)
 		{
-			buttons |= IN_ATTACK2;
+			newButtons |= IN_ATTACK2;
 		}
 		if (currentTickData.flags & RP_IN_JUMP)
 		{
-			buttons |= IN_JUMP;
+			newButtons |= IN_JUMP;
 		}
-		if (currentTickData.flags & RP_IN_DUCK || currentTickData.flags & RP_FL_DUCKING)
+		if (currentTickData.flags & RP_IN_DUCK)
 		{
-			buttons |= IN_DUCK;
+			newButtons |= IN_DUCK;
 		}
+		// Few assumptions here because the replay doesn't track them: Player doesn't use +klook or +strafe.
+		// If the assumptions are wrong we will just end up with wrong sound prediction, no big deal.
 		if (currentTickData.flags & RP_IN_FORWARD)
 		{
-			buttons |= IN_FORWARD;
+			newButtons |= IN_FORWARD;
+			vel[0] += RP_PLAYER_ACCELSPEED;
 		}
 		if (currentTickData.flags & RP_IN_BACK)
 		{
-			buttons |= IN_BACK;
-		}
-		if (currentTickData.flags & RP_IN_LEFT)
-		{
-			buttons |= IN_LEFT;
-		}
-		if (currentTickData.flags & RP_IN_RIGHT)
-		{
-			buttons |= IN_RIGHT;
+			newButtons |= IN_BACK;
+			vel[0] -= RP_PLAYER_ACCELSPEED;
 		}
 		if (currentTickData.flags & RP_IN_MOVELEFT)
 		{
-			buttons |= IN_MOVELEFT;
+			newButtons |= IN_MOVELEFT;
+			vel[1] -= RP_PLAYER_ACCELSPEED;
 		}
 		if (currentTickData.flags & RP_IN_MOVERIGHT)
 		{
-			buttons |= IN_MOVERIGHT;
+			newButtons |= IN_MOVERIGHT;
+			vel[1] += RP_PLAYER_ACCELSPEED;
+		}
+		if (currentTickData.flags & RP_IN_LEFT)
+		{
+			newButtons |= IN_LEFT;
+		}
+		if (currentTickData.flags & RP_IN_RIGHT)
+		{
+			newButtons |= IN_RIGHT;
 		}
 		if (currentTickData.flags & RP_IN_RELOAD)
 		{
-			buttons |= IN_RELOAD;
+			newButtons |= IN_RELOAD;
 		}
 		if (currentTickData.flags & RP_IN_SPEED)
 		{
-			buttons |= IN_SPEED;
+			newButtons |= IN_SPEED;
 		}
+		buttons = newButtons;
 		botButtons[bot] = buttons;
+		// The angles might be wrong if the player teleports, but this should only affect sound prediction.
+		angles = currentTickData.angles;
 
-		int entityFlags = GetEntityFlags(client);
 		// Set the bot's MoveType
-		MoveType replayMoveType = view_as<MoveType>(currentTickData.flags & RP_MOVETYPE_MASK);
-		if (Movement_GetSpeed(client) > SPEED_NORMAL * 2)
+		MoveType replayMoveType = view_as<MoveType>(prevTickData.flags & RP_MOVETYPE_MASK);
+		botMoveType[bot] = replayMoveType;
+		if (replayMoveType == MOVETYPE_WALK)
 		{
-			Movement_SetMovetype(client, MOVETYPE_NOCLIP);
-		}
-		else if (replayMoveType == MOVETYPE_WALK && currentTickData.flags & RP_FL_ONGROUND)
-		{
-			botPaused[bot] = false;
-			SetEntityFlags(client, entityFlags | FL_ONGROUND);
 			Movement_SetMovetype(client, MOVETYPE_WALK);
 		}
 		else if (replayMoveType == MOVETYPE_LADDER)
@@ -1007,17 +1068,11 @@ void PlaybackVersion2(int client, int bot, int &buttons)
 		{
 			Movement_SetMovetype(client, MOVETYPE_NOCLIP);
 		}
-		
-		if (currentTickData.flags & RP_UNDER_WATER)
-		{
-			SetEntityFlags(client, entityFlags | FL_INWATER);
-		}
-
 		// Set some variables
 		if (currentTickData.flags & RP_TELEPORT_TICK)
 		{
+			botJustTeleported[bot] = true;
 			botCurrentTeleport[bot]++;
-			Movement_SetMovetype(client, MOVETYPE_NOCLIP);
 		}
 
 		if (currentTickData.flags & RP_TAKEOFF_TICK)
@@ -1084,7 +1139,82 @@ void PlaybackVersion2(int client, int bot, int &buttons)
 			PrintToServer("==============================================================");
 		}
 		#endif
+	}
+}
 
+void PlaybackVersion2Post(int client, int bot)
+{
+	if (botPlaybackPaused[bot])
+	{
+		return;
+	}
+	int size = playbackTickData[bot].Length;
+	if (playbackTick[bot] != 0 && playbackTick[bot] != (size - 1))
+	{
+		ReplayTickData currentTickData;
+		ReplayTickData prevTickData;
+		playbackTickData[bot].GetArray(playbackTick[bot], currentTickData);
+		playbackTickData[bot].GetArray(IntMax(playbackTick[bot] - 1, 0), prevTickData);
+
+		// TeleportEntity does not set the absolute origin and velocity so we need to do it
+		// to prevent inaccurate eye position interpolation.
+		SetEntPropVector(client, Prop_Data, "m_vecVelocity", currentTickData.velocity);
+		SetEntPropVector(client, Prop_Data, "m_vecAbsVelocity", currentTickData.velocity);
+		
+		SetEntPropVector(client, Prop_Data, "m_vecAbsOrigin", currentTickData.origin);
+		SetEntPropVector(client, Prop_Data, "m_vecOrigin", currentTickData.origin);
+
+		SetEntPropFloat(client, Prop_Send, "m_angEyeAngles[0]", currentTickData.angles[0]);
+		SetEntPropFloat(client, Prop_Send, "m_angEyeAngles[1]", currentTickData.angles[1]);
+
+		MoveType replayMoveType = view_as<MoveType>(currentTickData.flags & RP_MOVETYPE_MASK);
+		botMoveType[bot] = replayMoveType;
+		int entityFlags = GetEntityFlags(client);
+		if (replayMoveType == MOVETYPE_WALK)
+		{
+			if (currentTickData.flags & RP_FL_ONGROUND)
+			{
+				SetEntityFlags(client, entityFlags | FL_ONGROUND);
+				botPaused[bot] = false;
+				// The bot is on the ground, so there must be a ground entity attributed to the bot.
+				int groundEnt = GetEntPropEnt(client, Prop_Send, "m_hGroundEntity");
+				if (groundEnt == -1 && botJustTeleported[bot])
+				{
+					SetEntPropFloat(client, Prop_Send, "m_flFallVelocity", 0.0);
+					float endPosition[3], mins[3], maxs[3];
+					GetEntPropVector(client, Prop_Send, "m_vecMaxs", maxs);
+					GetEntPropVector(client, Prop_Send, "m_vecMins", mins);
+					endPosition = currentTickData.origin;
+					endPosition[2] -= 2.0;
+					TR_TraceHullFilter(currentTickData.origin, endPosition, mins, maxs, MASK_PLAYERSOLID, TraceEntityFilterPlayers);
+
+					// This should always hit.
+					if (TR_DidHit())
+					{
+						groundEnt = TR_GetEntityIndex();
+						SetEntPropEnt(client, Prop_Data, "m_hGroundEntity", groundEnt);
+					}
+				}
+			}
+			else
+			{
+				botJustTeleported[bot] = false;
+			}
+		}
+		
+		if (currentTickData.flags & RP_UNDER_WATER)
+		{
+			SetEntityFlags(client, entityFlags | FL_INWATER);
+		}
+		if (currentTickData.flags & RP_FL_DUCKING)
+		{
+			SetEntPropFloat(client, Prop_Send, "m_flDuckAmount", 1.0);
+			SetEntProp(client, Prop_Send, "m_bDucking", false);
+			SetEntProp(client, Prop_Send, "m_bDucked", true);
+			SetEntityFlags(client, FL_DUCKING);
+		}
+
+		botSpeed[bot] = GetVectorHorizontalLength(currentTickData.velocity);
 		playbackTick[bot]++;
 	}
 }
@@ -1096,7 +1226,7 @@ static void SetBotStuff(int bot)
 	{
 		return;
 	}
-	
+
 	int client = botClient[bot];
 	
 	// Set its movement options just in case it could negatively affect the playback
@@ -1107,17 +1237,39 @@ static void SetBotStuff(int bot)
 	SetBotClanTag(bot);
 	SetBotName(bot);
 
+	// Bot takes one tick after being put in server to be able to respawn.
+	RequestFrame(RequestFrame_SetBotStuff, GetClientUserId(client));
+}
+
+public void RequestFrame_SetBotStuff(int userid)
+{
+	int client = GetClientOfUserId(userid);
+	if (!client)
+	{
+		return;
+	}
+	int bot;
+	for (bot = 0; bot <= RP_MAX_BOTS; bot++)
+	{
+		if (botClient[bot] == client)
+		{
+			break;
+		}
+		else if (bot == RP_MAX_BOTS)
+		{
+			return;
+		}
+	}
 	// Set the bot's team based on if it's NUB or PRO
 	if (botReplayType[bot] == ReplayType_Run 
 		&& GOKZ_GetTimeTypeEx(botTeleportsUsed[bot]) == TimeType_Pro)
 	{
-		GOKZ_JoinTeam(client, CS_TEAM_CT);
+		GOKZ_JoinTeam(client, CS_TEAM_CT, .forceBroadcast = true);
 	}
 	else
 	{
-		GOKZ_JoinTeam(client, CS_TEAM_T);
+		GOKZ_JoinTeam(client, CS_TEAM_CT, .forceBroadcast = true);
 	}
-
 	// Set bot weapons
 	// Always start by removing the pistol and knife
 	int currentPistol = GetPlayerWeaponSlot(client, CS_SLOT_SECONDARY);
@@ -1253,7 +1405,6 @@ static int GetUnusedBot()
 	{
 		if (!botInGame[bot])
 		{
-			CreateFakeClient("botName");
 			return bot;
 		}
 	}
@@ -1344,33 +1495,14 @@ static void MakePlayerSpectate(int client, int bot)
 	DataPack data = new DataPack();
 	data.WriteCell(clientUserID);
 	data.WriteCell(GetClientUserId(bot));
-
-	CreateTimer(0.2, Timer_ResetSpectate, clientUserID);
-	CreateTimer(0.3, Timer_SpectateBot, data); // After delay so name is correctly updated in client's HUD
+	CreateTimer(0.1, Timer_UpdateBotName, GetClientUserId(bot));
 	EnableReplayControls(client);
 }
 
-public Action Timer_ResetSpectate(Handle timer, int clientUID)
+public Action Timer_UpdateBotName(Handle timer, int botUID)
 {
-	int client = GetClientOfUserId(clientUID);
-	if (IsValidClient(client))
-	{
-		SetEntProp(client, Prop_Send, "m_iObserverMode", -1);
-		SetEntPropEnt(client, Prop_Send, "m_hObserverTarget", -1);
-	}
-}
-public Action Timer_SpectateBot(Handle timer, DataPack data)
-{
-	data.Reset();
-	int client = GetClientOfUserId(data.ReadCell());
-	int bot = GetClientOfUserId(data.ReadCell());
-	delete data;
-	
-	if (IsValidClient(client) && IsValidClient(bot))
-	{
-		GOKZ_JoinTeam(client, CS_TEAM_SPECTATOR);
-		SetEntProp(client, Prop_Send, "m_iObserverMode", 4);
-		SetEntPropEnt(client, Prop_Send, "m_hObserverTarget", bot);
-	}
+	Event e = CreateEvent("spec_target_updated");
+	e.SetInt("userid", botUID);
+	e.Fire();
 	return Plugin_Continue;
 }

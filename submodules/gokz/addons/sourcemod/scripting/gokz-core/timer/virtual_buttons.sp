@@ -43,7 +43,7 @@ bool ToggleVirtualButtonsLock(int client)
 	return virtualButtonsLocked[client];
 }
 
-bool LockVirtualButtons(int client)
+void LockVirtualButtons(int client)
 {
 	virtualButtonsLocked[client] = true;
 }
@@ -71,7 +71,6 @@ void SetVirtualButtonPosition(int client, float position[3], int course, bool is
 		virtualStartCourse[client] = course;
 		virtualStartOrigin[client] = position;
 		hasVirtualStartButton[client] = true;
-		
 	}
 	else
 	{
@@ -81,7 +80,21 @@ void SetVirtualButtonPosition(int client, float position[3], int course, bool is
 	}
 }
 
-
+void ResetVirtualButtonPosition(int client, bool isStart)
+{
+	if (isStart)
+	{
+		virtualStartCourse[client] = -1;
+		virtualStartOrigin[client] = {0.0, 0.0, 0.0};
+		hasVirtualStartButton[client] = false;
+	}
+	else
+	{
+		virtualEndCourse[client] = -1;
+		virtualEndOrigin[client] = {0.0, 0.0, 0.0};
+		hasVirtualEndButton[client] = false;
+	}
+}
 
 // =====[ EVENTS ]=====
 

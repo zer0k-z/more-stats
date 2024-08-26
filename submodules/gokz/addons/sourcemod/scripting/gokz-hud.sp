@@ -23,7 +23,7 @@ public Plugin myinfo =
 	author = "DanZay", 
 	description = "Provides HUD and UI features", 
 	version = GOKZ_VERSION, 
-	url = "https://bitbucket.org/kztimerglobalteam/gokz"
+	url = GOKZ_SOURCE_URL
 };
 
 #define UPDATER_URL GOKZ_UPDATER_BASE_URL..."gokz-hud.txt"
@@ -31,9 +31,12 @@ public Plugin myinfo =
 bool gB_GOKZRacing;
 bool gB_GOKZReplays;
 bool gB_MenuShowing[MAXPLAYERS + 1];
+int gI_ObserverTarget[MAXPLAYERS + 1];
 bool gB_JBTakeoff[MAXPLAYERS + 1];
 bool gB_FastUpdateRate[MAXPLAYERS + 1];
+int gI_DynamicMenu[MAXPLAYERS + 1];
 
+#include "gokz-hud/spectate_text.sp"
 #include "gokz-hud/commands.sp"
 #include "gokz-hud/hide_weapon.sp"
 #include "gokz-hud/info_panel.sp"
@@ -44,12 +47,13 @@ bool gB_FastUpdateRate[MAXPLAYERS + 1];
 #include "gokz-hud/speed_text.sp"
 #include "gokz-hud/timer_text.sp"
 #include "gokz-hud/tp_menu.sp"
-
+#include "gokz-hud/natives.sp"
 
 // =====[ PLUGIN EVENTS ]=====
 
 public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max)
 {
+	CreateNatives();
 	RegPluginLibrary("gokz-hud");
 	return APLRes_Success;
 }
@@ -62,9 +66,15 @@ public void OnPluginStart()
 	HookEvents();
 	RegisterCommands();
 	
+	UpdateSpecList();
 	OnPluginStart_RacingText();
 	OnPluginStart_SpeedText();
 	OnPluginStart_TimerText();
+}
+
+public void OnPluginEnd()
+{
+	OnPluginEnd_Menu();
 }
 
 public void OnAllPluginsLoaded()
@@ -112,6 +122,11 @@ public void OnLibraryRemoved(const char[] name)
 
 // =====[ CLIENT EVENTS ]=====
 
+public void OnClientDisconnect(int client)
+{
+	gI_ObserverTarget[client] = -1;
+}
+
 public void OnClientPutInServer(int client)
 {
 	SDKHook(client, SDKHook_PostThinkPost, OnPlayerPostThinkPost);
@@ -157,6 +172,11 @@ public void OnPlayerRunCmdPost(int client, int buttons, int impulse, const float
 		return;
 	}
 
+	if (!IsValidClient(info.ID))
+	{
+		return;
+	}
+	
 	OnPlayerRunCmdPost_InfoPanel(client, cmdnum, info);
 	OnPlayerRunCmdPost_RacingText(client, cmdnum);
 	OnPlayerRunCmdPost_SpeedText(client, cmdnum, info);
@@ -177,6 +197,7 @@ public void OnPlayerSpawn(Event event, const char[] name, bool dontBroadcast) //
 public Action OnPlayerDeath(Event event, const char[] name, bool dontBroadcast) // player_death pre hook
 {
 	event.BroadcastDisabled = true; // Block death notices
+	return Plugin_Continue;
 }
 
 public void GOKZ_OnJoinTeam(int client, int team)
@@ -240,15 +261,29 @@ public void GOKZ_OnOptionChanged(int client, const char[] option, any newValue)
 		{
 			gB_FastUpdateRate[client] = GOKZ_HUD_GetOption(client, HUDOption_UpdateRate) == UpdateRate_Fast;
 		}
+		else if (hudOption == HUDOption_DynamicMenu)
+		{
+			gI_DynamicMenu[client] = GOKZ_HUD_GetOption(client, HUDOption_DynamicMenu);
+		}
 	}
 }
 
 public void GOKZ_OnOptionsLoaded(int client)
 {
 	gB_FastUpdateRate[client] = GOKZ_HUD_GetOption(client, HUDOption_UpdateRate) == UpdateRate_Fast;
+	gI_DynamicMenu[client] = GOKZ_HUD_GetOption(client, HUDOption_DynamicMenu);
 }
 
 // =====[ OTHER EVENTS ]=====
+
+public void OnGameFrame()
+{
+	// Cache the spectator list every few ticks.
+	if (GetGameTickCount() % 4 == 0)
+	{
+		UpdateSpecList();
+	}
+}
 
 public void GOKZ_OnOptionsMenuCreated(TopMenu topMenu)
 {
@@ -295,4 +330,5 @@ static void SetHUDInfo(KZPlayer player, HUDInfo info, int cmdnum)
 	info.TakeoffSpeed = player.GOKZTakeoffSpeed;
 	info.IsTakeoff = Movement_GetTakeoffCmdNum(player.ID) == cmdnum;
 	info.Buttons = player.Buttons;
+	info.CurrentTeleport = player.TeleportCount;
 }

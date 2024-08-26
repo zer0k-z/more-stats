@@ -123,11 +123,11 @@ static void ShowCountdownText(KZPlayer player, KZPlayer targetPlayer)
 	int colour[4];
 	GetCountdownColour(timeToStart, colour);
 
-	SetHudTextParams(-1.0, 0.3, 1.0, colour[0], colour[1], colour[2], colour[3], 0, 1.0, 0.0, 0.0);
+	SetHudTextParams(-1.0, 0.3, GetTextHoldTime(gB_FastUpdateRate[player.ID] ? 3 : 6), colour[0], colour[1], colour[2], colour[3], 0, 1.0, 0.0, 0.0);
 	ShowSyncHudText(player.ID, racingHudSynchronizer, "%t\n\n%d", "Get Ready", IntMax(RoundToCeil(timeToStart), 1));
 }
 
-static float[] GetCountdownColour(float timeToStart, int buffer[4])
+static void GetCountdownColour(float timeToStart, int buffer[4])
 {
 	// From red to green
 	if (timeToStart >= RC_COUNTDOWN_TIME)
@@ -162,6 +162,6 @@ static void ShowStartedText(KZPlayer player, KZPlayer targetPlayer)
 		return;
 	}
 
-	SetHudTextParams(-1.0, 0.3, 1.0, 0, 255, 0, 255, 0, 1.0, 0.0, 0.0);
+	SetHudTextParams(-1.0, 0.3, GetTextHoldTime(gB_FastUpdateRate[player.ID] ? 3 : 6), 0, 255, 0, 255, 0, 1.0, 0.0, 0.0);
 	ShowSyncHudText(player.ID, racingHudSynchronizer, "%t", "Go!");
 } 

@@ -59,6 +59,17 @@
 		"chi"		"{darkred}计时已暂停."
 		"ru"		"{darkred}Ваш таймер остановлен."
 	}
+	"Safeguard - Blocked"
+	{
+		"en"		"{darkred}You can't perform this action because safeguard is enabled."
+		"chi"		"{darkred}您无法执行此操作，因为已启用保护模式."
+	}
+	"Safeguard - Blocked (Temp)"
+	{
+		"#format"	"{1:.1f}"
+		"en"		"{grey}Action is blocked by safeguard. Please wait {default}{1} {grey}seconds then reissue the command again."
+		"chi"		"{grey}操作被保护模式阻止. 请等待 {default}{1} {grey}秒后再使用该指令."
+	}
 
 
 	// =====[ OPTIONS MENU ]=====
@@ -73,6 +84,11 @@
 		"en"		"Disabled"
 		"chi"		"关闭"
 		"ru"		"Выключено"
+	}
+	"Options Menu - Legacy"
+	{
+		"en"		"Legacy"
+		"chi"		"传统"
 	}
 	"Options Menu - Top"
 	{
@@ -113,9 +129,11 @@
 	"Options Menu - Slow"
 	{
 		"en"		"Slow"
+		"chi"		"慢"
 	}
 	"Options Menu - Fast"
 	{
 		"en"		"Fast"
+		"chi"		"快"
 	}
 }

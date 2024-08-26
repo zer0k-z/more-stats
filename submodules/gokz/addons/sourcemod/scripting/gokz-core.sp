@@ -31,7 +31,7 @@ public Plugin myinfo =
 	author = "DanZay", 
 	description = "Core plugin of the GOKZ plugin set", 
 	version = GOKZ_VERSION, 
-	url = "https://bitbucket.org/kztimerglobalteam/gokz"
+	url = GOKZ_SOURCE_URL
 };
 
 #define UPDATER_URL GOKZ_UPDATER_BASE_URL..."gokz-core.txt"
@@ -41,6 +41,7 @@ Handle gH_DHooks_OnTeleport;
 Handle gH_DHooks_SetModel;
 
 int gI_CmdNum[MAXPLAYERS + 1];
+int gI_TickCount[MAXPLAYERS + 1];
 bool gB_OldOnGround[MAXPLAYERS + 1];
 int gI_OldButtons[MAXPLAYERS + 1];
 int gI_TeleportCmdNum[MAXPLAYERS + 1];
@@ -52,8 +53,6 @@ ConVar gCV_gokz_chat_prefix;
 ConVar gCV_sv_full_alltalk;
 
 #include "gokz-core/commands.sp"
-#include "gokz-core/forwards.sp"
-#include "gokz-core/natives.sp"
 #include "gokz-core/modes.sp"
 #include "gokz-core/misc.sp"
 #include "gokz-core/options.sp"
@@ -76,6 +75,9 @@ ConVar gCV_sv_full_alltalk;
 #include "gokz-core/timer/pause.sp"
 #include "gokz-core/timer/timer.sp"
 #include "gokz-core/timer/virtual_buttons.sp"
+
+#include "gokz-core/forwards.sp"
+#include "gokz-core/natives.sp"
 
 
 
@@ -166,6 +168,7 @@ public void OnClientPutInServer(int client)
 	OnClientPutInServer_MapTriggers(client);
 	OnClientPutInServer_Triggerfix(client);
 	OnClientPutInServer_Noclip(client);
+	OnClientPutInServer_Turnbinds(client);
 	HookClientEvents(client);
 }
 
@@ -178,7 +181,10 @@ public void OnClientDisconnect(int client)
 public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3], float angles[3], int &weapon, int &subtype, int &cmdnum, int &tickcount, int &seed, int mouse[2])
 {
 	gI_CmdNum[client] = cmdnum;
+	gI_TickCount[client] = tickcount;
+	OnPlayerRunCmd_Triggerfix(client);
 	OnPlayerRunCmd_MapTriggers(client, buttons);
+	OnPlayerRunCmd_Turnbinds(client, buttons, tickcount, angles);
 	return Plugin_Continue;
 }
 
@@ -193,17 +199,6 @@ public void OnPlayerRunCmdPost(int client, int buttons, int impulse, const float
 	OnPlayerRunCmdPost_Timer(client); // This should be first after emulating buttons
 	OnPlayerRunCmdPost_ValidJump(client);
 	UpdateTrackingVariables(client, cmdnum, buttons); // This should be last
-}
-
-public Action OnClientCommandKeyValues(int client, KeyValues kv)
-{
-	// Block clan tag changes - Credit: GoD-Tony (https://forums.alliedmods.net/showpost.php?p=2337679&postcount=6)
-	char cmd[16];
-	if (kv.GetSectionName(cmd, sizeof(cmd)) && StrEqual(cmd, "ClanTagChanged", false))
-	{
-		return Plugin_Handled;
-	}
-	return Plugin_Continue;
 }
 
 public void OnClientCookiesCached(int client)
@@ -248,6 +243,12 @@ public Action OnPlayerDeath(Event event, const char[] name, bool dontBroadcast) 
 	return Plugin_Continue;
 }
 
+public void OnPlayerJump(Event event, const char[] name, bool dontBroadcast)
+{
+	int client = GetClientOfUserId(event.GetInt("userid"));
+	OnPlayerJump_Triggers(client);
+}
+
 public MRESReturn DHooks_OnTeleport(int client, Handle params)
 {
 	gB_OriginTeleported[client] = !DHookIsNullParam(params, 1); // Origin affected
@@ -269,6 +270,11 @@ public void OnCSPlayerSpawnPost(int client)
 	{
 		SetEntityFlags(client, GetEntityFlags(client) & ~FL_ONGROUND);
 	}
+}
+
+public void OnClientPreThinkPost(int client)
+{
+	OnClientPreThinkPost_UseButtons(client);
 }
 
 public void Movement_OnChangeMovetype(int client, MoveType oldMovetype, MoveType newMovetype)
@@ -363,7 +369,7 @@ public void OnConfigsExecuted()
 	OnConfigsExecuted_OptionsMenu();
 }
 
-public Action OnNormalSound(int[] clients, int &numClients, char[] sample, int &entity, int &channel, float &volume, int &level, int &pitch, int &flags, char[] soundEntry, int &seed)
+public Action OnNormalSound(int clients[MAXPLAYERS], int &numClients, char sample[PLATFORM_MAX_PATH], int &entity, int &channel, float &volume, int &level, int &pitch, int &flags, char soundEntry[PLATFORM_MAX_PATH], int &seed)
 {
 	if (OnNormalSound_StopSounds(entity) == Plugin_Handled)
 	{
@@ -374,6 +380,13 @@ public Action OnNormalSound(int[] clients, int &numClients, char[] sample, int &
 
 public void OnEntityCreated(int entity, const char[] classname)
 {
+	// Don't react to player related entities
+	if (StrEqual(classname, "predicted_viewmodel") || StrEqual(classname, "item_assaultsuit")
+		|| StrEqual(classname, "cs_bot") || StrEqual(classname, "player")
+		|| StrContains(classname, "weapon") != -1)
+	{
+		return;
+	}
 	SDKHook(entity, SDKHook_Spawn, OnEntitySpawned);
 	SDKHook(entity, SDKHook_SpawnPost, OnEntitySpawnedPost);
 	OnEntityCreated_Triggerfix(entity, classname);
@@ -475,8 +488,9 @@ static void HookEvents()
 	HookEvent("player_spawn", OnPlayerSpawn, EventHookMode_Post);
 	HookEvent("player_team", OnPlayerJoinTeam, EventHookMode_Pre);
 	HookEvent("player_death", OnPlayerDeath, EventHookMode_Pre);
+	HookEvent("player_jump", OnPlayerJump);
 	HookEvent("round_start", OnRoundStart, EventHookMode_PostNoCopy);
-	AddNormalSoundHook(view_as<NormalSHook>(OnNormalSound));
+	AddNormalSoundHook(OnNormalSound);
 	
 	GameData gameData = new GameData("sdktools.games");
 	int offset;
@@ -502,6 +516,7 @@ static void HookClientEvents(int client)
 	DHookEntity(gH_DHooks_OnTeleport, true, client);
 	DHookEntity(gH_DHooks_SetModel, true, client);
 	SDKHook(client, SDKHook_SpawnPost, OnCSPlayerSpawnPost);
+	SDKHook(client, SDKHook_PreThinkPost, OnClientPreThinkPost);
 }
 
 static void UpdateTrackingVariables(int client, int cmdnum, int buttons)

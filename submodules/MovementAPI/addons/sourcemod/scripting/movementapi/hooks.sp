@@ -277,10 +277,9 @@ public MRESReturn DHooks_OnJump_Post(Address pThis, DHookParam hParams)
 	gF_TakeoffVelocity[client] = gF_Velocity[client];
 	gI_TakeoffCmdNum[client] = gI_Cmdnum[client];
 	gI_TakeoffTick[client] = gI_TickCount[client];
-	if (!Movement_GetOnGround(client) && gB_OldOnGround[client] || gB_Jumpbugged[client])
-	{
- 		Call_OnStopTouchGround(client, true, gB_TakeoffFromLadder[client], gB_Jumpbugged[client]);
-	}
+
+	// OnJump will only be called if the client previously touched some sort of ground, so Call_OnStopTouchGround should always be called.
+	Call_OnStopTouchGround(client, true, gB_TakeoffFromLadder[client], gB_Jumpbugged[client]);
 
 	Action result = UpdateMoveData(pThis, client, Call_OnJumpPost);
 	if (result != Plugin_Continue)
@@ -498,7 +497,8 @@ public MRESReturn DHooks_OnCategorizePosition_Post(Address pThis)
 			gI_TakeoffCmdNum[client] = gI_Cmdnum[client];
 			gB_Jumped[client] = false;
 			gB_HitPerf[client] = false;
-			Call_OnStopTouchGround(client, false, !gB_WalkMoved[client], false);
+			bool hadLadderMoveType = Movement_GetMovetype(client) == MOVETYPE_LADDER || gMT_OldMovetype[client] == MOVETYPE_LADDER;
+			Call_OnStopTouchGround(client, false, hadLadderMoveType && !gB_WalkMoved[client], false);
 		}
 	}
 
@@ -538,8 +538,11 @@ static void NobugLandingOrigin(int client, float landingOrigin[3])
 	gB_Duckbugged[client] = gB_ProcessingDuck[client];
 	float distanceToGround = gF_Origin[client][2] - groundPos[2];
 	float velocity[3], origin[3];
-	// NOTE: this has to be 0.0. If there's any distance to the ground, then we'll trace it with this one.
-	if (distanceToGround != 0.0 || gB_ProcessingDuck[client])
+	// If there's any distance to the ground, then we'll trace it with this one.
+	
+	// It seems like sometimes the player can end up ever so slighly above this "ground" value,
+	// likely due to floating point precision error. Treat it as a bugged jump as well.
+	if (distanceToGround > 0.001 || gB_ProcessingDuck[client])
 	{
 		// Use the current origin and velocity if we're not touching the ground
 		gF_LandingVelocity[client] = gF_Velocity[client];

@@ -26,8 +26,10 @@ enum HUDOption:
 	HUDOption_ShowWeapon,
 	HUDOption_ShowControls,
 	HUDOption_DeadstrafeColor,
-	HUDOption_UpdateRate,
 	HUDOption_ShowSpectators,
+	HUDOption_SpecListPosition,
+	HUDOption_UpdateRate,
+	HUDOption_DynamicMenu,
 	HUDOPTION_COUNT
 };
 
@@ -115,12 +117,26 @@ enum
 	SHOWSPECS_COUNT
 };
 
+enum
+{
+	SpecListPosition_TPMenu = 0,
+	SpecListPosition_InfoPanel,
+	SPECLISTPOSITION_COUNT
+}
 
 enum
 {
 	UpdateRate_Slow = 0,
 	UpdateRate_Fast,
 	UPDATERATE_COUNT,
+};
+
+enum
+{
+	DynamicMenu_Legacy = 0,
+	DynamicMenu_Disabled,
+	DynamicMenu_Enabled,
+	DYNAMICMENU_COUNT
 };
 
 // =====[ STRUCTS ]======
@@ -167,8 +183,10 @@ stock char gC_HUDOptionNames[HUDOPTION_COUNT][] =
 	"GOKZ HUD - Show Weapon",
 	"GOKZ HUD - Show Controls",
 	"GOKZ HUD - Dead Strafe",
+	"GOKZ HUD - Show Spectators",
+	"GOKZ HUD - Spec List Pos",
 	"GOKZ HUD - Update Rate",
-	"GOKZ HUD - Show Spectators"
+	"GOKZ HUD - Dynamic Menu"
 };
 
 stock char gC_HUDOptionDescriptions[HUDOPTION_COUNT][] = 
@@ -183,8 +201,10 @@ stock char gC_HUDOptionDescriptions[HUDOPTION_COUNT][] =
 	"Weapon Viewmodel - 0 = Disabled, 1 = Enabled",
 	"Replay Controls Display - 0 = Disbled, 1 = Enabled",
 	"Dead Strafe Indicator - 0 = Disabled, 1 = Enabled",
+	"Show Spectators - 0 = Disabled, 1 = Number Only, 2 = Number and Names",
+	"Spectator List Position - 0 = Teleport Menu, 2 = Center Panel",
 	"HUD Update Rate - 0 = Slow, 1 = Fast",
-	"Show Spectators - 0 = Disabled, 1 = Number Only, 2 = Number and Names"
+	"Dynamic Menu - 0 = Legacy, 1 = Disabled, 2 = Enabled"
 };
 
 stock char gC_HUDOptionPhrases[HUDOPTION_COUNT][] = 
@@ -199,8 +219,10 @@ stock char gC_HUDOptionPhrases[HUDOPTION_COUNT][] =
 	"Options Menu - Show Weapon",
 	"Options Menu - Show Controls",
 	"Options Menu - Dead Strafe Indicator",
+	"Options Menu - Show Spectators",
+	"Options Menu - Spectator List Position",
 	"Options Menu - Update Rate",
-	"Options Menu - Show Spectators"
+	"Options Menu - Dynamic Menu"
 };
 
 stock int gI_HUDOptionCounts[HUDOPTION_COUNT] = 
@@ -215,8 +237,10 @@ stock int gI_HUDOptionCounts[HUDOPTION_COUNT] =
 	SHOWWEAPON_COUNT,
 	REPLAYCONTROLS_COUNT,
 	DEADSTRAFECOLOR_COUNT,
+	SHOWSPECS_COUNT,
+	SPECLISTPOSITION_COUNT,
 	UPDATERATE_COUNT,
-	SHOWSPECS_COUNT
+	DYNAMICMENU_COUNT
 };
 
 stock int gI_HUDOptionDefaults[HUDOPTION_COUNT] = 
@@ -231,8 +255,10 @@ stock int gI_HUDOptionDefaults[HUDOPTION_COUNT] =
 	ShowWeapon_Enabled,
 	ReplayControls_Enabled,
 	DeadstrafeColor_Disabled,
+	ShowSpecs_Disabled,
+	SpecListPosition_TPMenu,
 	UpdateRate_Slow,
-	ShowSpecs_Disabled
+	DynamicMenu_Legacy
 };
 
 stock char gC_TPMenuPhrases[TPMENU_COUNT][] = 
@@ -290,11 +316,57 @@ stock char gC_ShowSpecsPhrases[SHOWSPECS_COUNT][] =
 	"Options Menu - Number and Names"
 };
 
+stock char gC_SpecListPositionPhrases[SPECLISTPOSITION_COUNT][] =
+{
+	"Options Menu - Teleport Menu",
+	"Options Menu - Info Panel"
+};
+
 stock char gC_HUDUpdateRatePhrases[UPDATERATE_COUNT][]=
 {
 	"Options Menu - Slow",
 	"Options Menu - Fast"
 };
+
+stock char gC_DynamicMenuPhrases[DYNAMICMENU_COUNT][]=
+{
+	"Options Menu - Legacy",
+	"Options Menu - Disabled",
+	"Options Menu - Enabled"
+};
+
+// =====[ NATIVES ]=====
+
+/**
+ * Returns whether the GOKZ HUD menu is showing for a client.
+ *
+ * @param client		Client index.
+ * @return				Whether the GOKZ HUD menu is showing.
+ */
+native bool GOKZ_HUD_GetMenuShowing(int client);
+
+/**
+ * Sets whether the GOKZ HUD menu would be showing for a client.
+ *
+ * @param client		Client index.
+ * @param value			Whether the GOKZ HUD menu would be showing for a client.
+ */
+native void GOKZ_HUD_SetMenuShowing(int client, bool value);
+
+/**
+ * Gets the spectator text for the menu. Used by GOKZ-replays.
+ *
+ * @param client		Client index.
+ * @param value			Whether the GOKZ HUD menu would be showing for a client.
+ */
+native void GOKZ_HUD_GetMenuSpectatorText(int client, any[] info, char[] buffer, int size);
+
+/**
+ * Forces the client's TP menu to update.
+ *
+ * @param client		Client index.
+ */
+native void GOKZ_HUD_ForceUpdateTPMenu(int client);
 
 // =====[ STOCKS ]=====
 
@@ -384,3 +456,13 @@ public SharedPlugin __pl_gokz_hud =
 	required = 0, 
 	#endif
 };
+
+#if !defined REQUIRE_PLUGIN
+public void __pl_gokz_hud_SetNTVOptional()
+{
+	MarkNativeAsOptional("GOKZ_HUD_GetMenuShowing");
+	MarkNativeAsOptional("GOKZ_HUD_SetMenuShowing");
+	MarkNativeAsOptional("GOKZ_HUD_GetMenuSpectatorText");
+	MarkNativeAsOptional("GOKZ_HUD_ForceUpdateTPMenu");
+}
+#endif

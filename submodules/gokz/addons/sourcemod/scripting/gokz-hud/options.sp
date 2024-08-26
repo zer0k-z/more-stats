@@ -154,5 +154,37 @@ static void PrintOptionChangeMessage(int client, HUDOption option, any newValue)
 				}
 			}
 		}
+		case HUDOption_SpecListPosition:
+		{
+			switch (newValue)
+			{
+				case SpecListPosition_InfoPanel:
+				{
+					GOKZ_PrintToChat(client, true, "%t", "Option - Spectator List Position - Info Panel");
+				}
+				case SpecListPosition_TPMenu:
+				{
+					GOKZ_PrintToChat(client, true, "%t", "Option - Spectator List Position - TP Menu");
+				}
+			}
+		}
+		case HUDOption_DynamicMenu:
+		{
+			switch (newValue)
+			{
+				case DynamicMenu_Legacy:
+				{
+					GOKZ_PrintToChat(client, true, "%t", "Option - Dynamic Menu - Legacy");
+				}
+				case DynamicMenu_Disabled:
+				{
+					GOKZ_PrintToChat(client, true, "%t", "Option - Dynamic Menu - Disable");
+				}
+				case DynamicMenu_Enabled:
+				{
+					GOKZ_PrintToChat(client, true, "%t", "Option - Dynamic Menu - Enable");
+				}
+			}
+		}
 	}
 } 

@@ -8,7 +8,7 @@
 #endinput
 #endif
 #define _gokz_included_
-
+#include <cstrike>
 #include <movement>
 
 #include <gokz/version>
@@ -32,6 +32,7 @@ enum ObsMode
 
 // =====[ CONSTANTS ]=====
 
+#define GOKZ_SOURCE_URL "https://github.com/KZGlobalTeam/gokz"
 #define GOKZ_UPDATER_BASE_URL "http://updater.gokz.org/v2/"
 #define GOKZ_COLLISION_GROUP_STANDARD 2
 #define GOKZ_COLLISION_GROUP_NOTRIGGER 1
@@ -40,7 +41,9 @@ enum ObsMode
 #define PI 3.14159265359
 #define SPEED_NORMAL 250.0
 #define SPEED_NO_WEAPON 260.0
-#define IGNORE_JUMP_TIME 0.2 
+#define FLOAT_MAX view_as<float>(0x7F7FFFFF)
+#define SF_BUTTON_USE_ACTIVATES 1024
+#define IGNORE_JUMP_TIME 0.2
 stock float PLAYER_MINS[3] = {-16.0, -16.0, 0.0};
 stock float PLAYER_MAXS[3] = {16.0, 16.0, 72.0};
 stock float PLAYER_MAXS_DUCKED[3] = {16.0, 16.0, 54.0};
@@ -59,9 +62,9 @@ stock float PLAYER_MAXS_DUCKED[3] = {16.0, 16.0, 54.0};
 stock char[] GOKZ_FormatTime(float time, bool precise = true)
 {
 	char formattedTime[12];
-	
+
 	int roundedTime = RoundFloat(time * 100); // Time rounded to number of centiseconds
-	
+
 	int centiseconds = roundedTime % 100;
 	roundedTime = (roundedTime - centiseconds) / 100;
 	int seconds = roundedTime % 60;
@@ -69,7 +72,7 @@ stock char[] GOKZ_FormatTime(float time, bool precise = true)
 	int minutes = roundedTime % 60;
 	roundedTime = (roundedTime - minutes) / 60;
 	int hours = roundedTime;
-	
+
 	if (hours == 0)
 	{
 		if (precise)
@@ -243,6 +246,10 @@ stock ObsMode GetObserverMode(int client)
  */
 stock int GetObserverTarget(int client)
 {
+	if (!IsValidClient(client))
+	{
+		return -1;
+	}
 	ObsMode mode = GetObserverMode(client);
 	if (mode == ObsMode_InEye || mode == ObsMode_Chase)
 	{
@@ -279,7 +286,7 @@ stock void EmitSoundToClientSpectators(int client, const char[] sound)
 stock float CalcDeltaAngle(float angleA, float angleB)
 {
 	float difference = angleB - angleA;
-	
+
 	if (difference > 180.0)
 	{
 		difference = difference - 360.0;
@@ -288,7 +295,7 @@ stock float CalcDeltaAngle(float angleA, float angleB)
 	{
 		difference = difference + 360.0;
 	}
-	
+
 	return difference;
 }
 
@@ -306,20 +313,20 @@ stock void Color_StripFromChatText(const char[] input, char[] output, int size)
 {
 	int x = 0;
 	for (int i = 0; input[i] != '\0'; i++) {
-		
+
 		if (x + 1 == size)
 		{
 			break;
 		}
-		
+
 		int character = input[i];
-		
+
 		if (character > 0x08)
 		{
 			output[x++] = character;
 		}
 	}
-	
+
 	output[x] = '\0';
 }
 
@@ -367,7 +374,7 @@ stock int NextIndex(int index, int max)
 }
 
 /**
- * Reorders an array with current index at the front, and previous 
+ * Reorders an array with current index at the front, and previous
  * values after, including looping back to the end after reaching
  * the start of the array.
  *
@@ -406,14 +413,14 @@ stock int Steam2ToSteamAccountID(const char[] steamID2)
 	{
 		return -1;
 	}
-	
+
 	int IDNumberPart1 = StringToInt(pieces[1]);
 	int IDNumberPart2 = StringToInt(pieces[2]);
 	if (pieces[1][0] != '0' && IDNumberPart1 == 0 || IDNumberPart1 != 0 && IDNumberPart1 != 1 || IDNumberPart2 <= 0)
 	{
 		return -1;
 	}
-	
+
 	return IDNumberPart1 + (IDNumberPart2 << 1);
 }
 
@@ -431,8 +438,10 @@ stock void TeleportPlayer(int client, const float origin[3], const float angles[
 	// Clear the player's parent before teleporting to fix being
 	// teleported into seemingly random places if the player has a parent.
 	AcceptEntityInput(client, "ClearParent");
-	
+
 	Movement_SetOrigin(client, origin);
+	Movement_SetVelocity(client, view_as<float>( { 0.0, 0.0, 0.0 } ));
+	Movement_SetBaseVelocity(client, view_as<float>( { 0.0, 0.0, 0.0 } ));
 	if (setAngles)
 	{
 		// NOTE: changing angles with TeleportEntity can fail due to packet loss!!!
@@ -440,20 +449,20 @@ stock void TeleportPlayer(int client, const float origin[3], const float angles[
 		Movement_SetEyeAngles(client, angles);
 	}
 	// Duck the player if there is something blocking them from above
-	Handle trace = TR_TraceHullFilterEx(origin, 
-		origin, 
+	Handle trace = TR_TraceHullFilterEx(origin,
+		origin,
 		view_as<float>( { -16.0, -16.0, 0.0 } ),  // Standing players are 32 x 32 x 72
-		view_as<float>( { 16.0, 16.0, 72.0 } ), 
-		MASK_PLAYERSOLID, 
-		TraceEntityFilterPlayers, 
+		view_as<float>( { 16.0, 16.0, 72.0 } ),
+		MASK_PLAYERSOLID,
+		TraceEntityFilterPlayers,
 		client);
 	bool ducked = TR_DidHit(trace);
-	
+
 	if (holdStill)
 	{
 		// Prevent noclip exploit
 		SetEntProp(client, Prop_Send, "m_CollisionGroup", GOKZ_COLLISION_GROUP_STANDARD);
-		
+
 		// Intelligently hold player still to prevent booster and trigger exploits
 		StartHoldStill(client, ducked);
 	}
@@ -461,7 +470,7 @@ stock void TeleportPlayer(int client, const float origin[3], const float angles[
 	{
 		ForcePlayerDuck(client);
 	}
-	
+
 	delete trace;
 }
 
@@ -471,7 +480,7 @@ static void StartHoldStill(int client, bool ducked)
 	data.WriteCell(GetClientUserId(client));
 	data.WriteCell(0); // tick counter
 	data.WriteCell(GOKZ_TP_FREEZE_TICKS); // number of ticks to hold still
-	data.WriteCell(ducked); 
+	data.WriteCell(ducked);
 	ContinueHoldStill(data);
 }
 
@@ -483,12 +492,12 @@ public void ContinueHoldStill(DataPack data)
 	int tickCount = data.ReadCell();
 	bool ducked = data.ReadCell();
 	delete data;
-	
+
 	if (!IsValidClient(client))
 	{
 		return;
 	}
-	
+
 	if (ticks < tickCount)
 	{
 		Movement_SetVelocity(client, view_as<float>( { 0.0, 0.0, 0.0 } ));
@@ -502,16 +511,16 @@ public void ContinueHoldStill(DataPack data)
 		{
 			Movement_SetMovetype(client, MOVETYPE_LADDER);
 		}
-		
+
 		// Prevent noclip exploit
 		SetEntProp(client, Prop_Send, "m_CollisionGroup", GOKZ_COLLISION_GROUP_STANDARD);
-		
+
 		// Force duck on player and make sure that the player can't trigger triggers above them.
 		// they can still trigger triggers even when we force ducking.
 		if (ducked)
 		{
 			ForcePlayerDuck(client);
-			
+
 			if (ticks < tickCount - 1)
 			{
 				// Don't trigger triggers
@@ -523,7 +532,7 @@ public void ContinueHoldStill(DataPack data)
 				SetEntProp(client, Prop_Send, "m_CollisionGroup", GOKZ_COLLISION_GROUP_STANDARD);
 			}
 		}
-		
+
 		++ticks;
 		data = new DataPack();
 		data.WriteCell(GetClientUserId(client));
@@ -543,7 +552,8 @@ stock void ForcePlayerDuck(int client)
 {
 	// these are both necessary, because on their own the player will sometimes still be in a state that isn't fully ducked.
 	SetEntPropFloat(client, Prop_Send, "m_flDuckAmount", 1.0, 0);
-	SetEntProp(client, Prop_Send, "m_bDucking", true);
+	SetEntProp(client, Prop_Send, "m_bDucking", false);
+	SetEntProp(client, Prop_Send, "m_bDucked", true);
 }
 
 /**
@@ -555,11 +565,11 @@ stock void ForcePlayerDuck(int client)
 stock bool IsPlayerStuck(int client)
 {
 	float vecMin[3], vecMax[3], vecOrigin[3];
-	
+
 	GetClientMins(client, vecMin);
 	GetClientMaxs(client, vecMax);
 	GetClientAbsOrigin(client, vecOrigin);
-	
+
 	TR_TraceHullFilter(vecOrigin, vecOrigin, vecMin, vecMax, MASK_PLAYERSOLID, TraceEntityFilterPlayers);
 	return TR_DidHit(); // head in wall ?
 }
@@ -577,12 +587,12 @@ stock bool GetEntityAbsOrigin(int entity, float result[3])
 	{
 		return false;
 	}
-	
+
 	if (!HasEntProp(entity, Prop_Data, "m_vecAbsOrigin"))
 	{
 		return false;
 	}
-	
+
 	GetEntPropVector(entity, Prop_Data, "m_vecAbsOrigin", result);
 	return true;
 }
@@ -630,7 +640,7 @@ stock int GOKZFindEntityByName(const char[] name, const char[] className = "", b
 			{
 				continue;
 			}
-			
+
 			char entName[65];
 			GetEntityName(entity, entName, sizeof(entName));
 			if (StrEqual(entName, name))
@@ -718,10 +728,10 @@ stock void RotateVectorAxis(float vec[3], float axis[3], float theta, float resu
 {
 	float cosTheta = Cosine(theta);
 	float sinTheta = Sine(theta);
-	
+
 	float axisVecCross[3];
 	GetVectorCrossProduct(axis, vec, axisVecCross);
-	
+
 	for (int i = 0; i < 3; i++)
 	{
 		result[i] = (vec[i] * cosTheta) + (axisVecCross[i] * sinTheta) + (axis[i] * GetVectorDotProduct(axis, vec)) * (1.0 - cosTheta);
@@ -749,7 +759,7 @@ stock void RotateVectorPitchYaw(float vec[3], float pitch, float yaw, float resu
 }
 
 /**
- * Attempts to return a valid spawn location. 
+ * Attempts to return a valid spawn location.
  *
  * @param origin			Spawn origin if found.
  * @param angles			Spawn angles if found.
@@ -773,7 +783,7 @@ stock bool GetValidSpawn(float origin[3], float angles[3])
 		{
 			spawnEntity = FindEntityByClassname(spawnEntity, "info_player_terrorist");
 		}
-		
+
 		if (spawnEntity != -1)
 		{
 			GetEntPropVector(spawnEntity, Prop_Data, "m_vecOrigin", spawnOrigin);
@@ -798,7 +808,7 @@ stock bool GetValidSpawn(float origin[3], float angles[3])
 }
 
 /**
- * Check whether a position is a valid spawn location. 
+ * Check whether a position is a valid spawn location.
  * A spawn location is considered valid if it is in bounds and not stuck inside the ground.
  *
  * @param origin			Origin vector.
@@ -827,12 +837,25 @@ stock bool IsSpawnValid(float origin[3])
  */
 stock void GetEntityPositions(int entity, float origin[3], float center[3], float angles[3], float distFromCenter[3])
 {
+	int ent = entity;
 	float maxs[3], mins[3];
-	GetEntPropVector(entity, Prop_Send, "m_vecOrigin", origin);
-	GetEntPropVector(entity, Prop_Data, "m_angRotation", angles);
-	
-	GetEntPropVector(entity, Prop_Send, "m_vecMaxs", maxs);
-	GetEntPropVector(entity, Prop_Send, "m_vecMins", mins);
+	GetEntPropVector(ent, Prop_Send, "m_vecOrigin", origin);
+	// Take parent entities into account.
+	while (GetEntPropEnt(ent, Prop_Send, "moveparent") != -1)
+	{
+		ent = GetEntPropEnt(ent, Prop_Send, "moveparent");
+		float tempOrigin[3];
+		GetEntPropVector(ent, Prop_Send, "m_vecOrigin", tempOrigin);
+		for (int i = 0; i < 3; i++)
+		{
+			origin[i] += tempOrigin[i];
+		}
+	}
+
+	GetEntPropVector(ent, Prop_Data, "m_angRotation", angles);
+
+	GetEntPropVector(ent, Prop_Send, "m_vecMaxs", maxs);
+	GetEntPropVector(ent, Prop_Send, "m_vecMins", mins);
 	for (int i = 0; i < 3; i++)
 	{
 		center[i] = origin[i] + (maxs[i] + mins[i]) / 2;
@@ -881,7 +904,7 @@ static bool FindValidPositionAroundCenter(float center[3], float distFromCenter[
 {
 	float testOrigin[3];
 	int x, y;
-	
+
 	for (int i = 0; i < 3; i++)
 	{
 		// The search starts from the center then outwards to opposite directions.
@@ -920,7 +943,7 @@ static bool CanSeeBox(float origin[3], float center[3], float distFromCenter[3])
 	float traceOrigin[3], traceDest[3], mins[3], maxs[3];
 
 	CopyVector(origin, traceOrigin);
-	
+
 
 	SubtractVectors(center, distFromCenter, mins);
 	AddVectors(center, distFromCenter, maxs);
@@ -964,7 +987,7 @@ stock int GOKZGetEntityFromAddress(Address pEntity)
 	{
 		return EntRefToEntIndex(LoadFromAddress(pEntity + view_as<Address>(offs_RefEHandle), NumberType_Int32) | (1 << 31));
 	}
-	
+
 	// if we don't have it already, attempt to lookup offset based on SDK information
 	// CWorld is derived from CBaseEntity so it should have both offsets
 	int offs_angRotation = FindDataMapInfo(0, "m_angRotation"), offs_vecViewOffset = FindDataMapInfo(0, "m_vecViewOffset");
@@ -982,7 +1005,7 @@ stock int GOKZGetEntityFromAddress(Address pEntity)
 		GetGameFolderName(game, sizeof(game));
 		SetFailState("Could not confirm offset of CBaseEntity::m_RefEHandle (incorrect assumption for game '%s'?)", game);
 	}
-	
+
 	// offset seems right, cache it for the next call
 	offs_RefEHandle = offs_angRotation + 0x0C;
 	return GOKZGetEntityFromAddress(pEntity);
@@ -1000,4 +1023,75 @@ stock int GOKZGetClientFromGameMovementAddress(Address addr, int offsetCGameMove
 {
 	Address playerAddr = view_as<Address>(LoadFromAddress(view_as<Address>(view_as<int>(addr) + offsetCGameMovement_player), NumberType_Int32));
 	return GOKZGetEntityFromAddress(playerAddr);
+}
+
+/**
+ * Gets the nearest point in the oriented bounding box of an entity to a point.
+ *
+ * @param entity			Entity index.
+ * @param origin			Point's origin.
+ * @param result			Result point.
+ */
+stock void CalcNearestPoint(int entity, float origin[3], float result[3])
+{
+	float entOrigin[3], entMins[3], entMaxs[3], trueMins[3], trueMaxs[3];
+	GetEntPropVector(entity, Prop_Send, "m_vecOrigin", entOrigin);
+	GetEntPropVector(entity, Prop_Send, "m_vecMaxs", entMaxs);
+	GetEntPropVector(entity, Prop_Send, "m_vecMins", entMins);
+
+	AddVectors(entOrigin, entMins, trueMins);
+	AddVectors(entOrigin, entMaxs, trueMaxs);
+
+	for (int i = 0; i < 3; i++)
+	{
+		result[i] = FloatClamp(origin[i], trueMins[i], trueMaxs[i]);
+	}
+}
+
+/**
+ * Get the shortest distance from P to the (infinite) line through vLineA and vLineB.
+ *
+ * @param P				Point's origin.
+ * @param vLineA		Origin of the first point of the line.
+ * @param vLineB		Origin of the first point of the line.
+ * @return				The shortest distance from the point to the line.
+ */
+stock float CalcDistanceToLine(float P[3], float vLineA[3], float vLineB[3])
+{
+	float vClosest[3];
+	float vDir[3];
+	float t;
+	float delta[3];	
+	SubtractVectors(vLineB, vLineA, vDir);
+	float div = GetVectorDotProduct(vDir, vDir);
+	if (div < EPSILON)
+	{
+		t = 0.0;
+	}
+	else
+	{
+		t = (GetVectorDotProduct(vDir, P) - GetVectorDotProduct(vDir, vLineA)) / div;
+	}
+	for (int i = 0; i < 3; i++)
+	{
+		vClosest[i] = vLineA[i] + vDir[i]*t;
+	}
+	SubtractVectors(P, vClosest, delta);
+	return GetVectorLength(delta);
+}
+
+/**
+ * Gets the ideal amount of time the text should be held for HUD messages.
+ * 
+ * The message buffer is only 16 slots long, and it is shared between 6 channels maximum.
+ * Assuming a message is sent every game frame, each channel used should be only taking around 2.5 slots on average.
+ * This also assumes all channels are used equally (so no other plugin taking all the channel buffer for itself).
+ * We want to use as much of the message buffer as possible to take into account latency variances.
+ * 
+ * @param interval						HUD message update interval, in tick intervals.
+ * @return								How long the text should be held for.
+ */
+stock float GetTextHoldTime(int interval)
+{
+    return 3 * interval * GetTickInterval();
 }
