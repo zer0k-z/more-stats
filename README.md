@@ -1,17 +1,20 @@
 # More Stats
 
-![Downloads](https://img.shields.io/github/downloads/zer0k-z/more-stats/total?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/zer0k-z/more-stats?style=flat-square) ![Open issues](https://img.shields.io/github/issues/zer0k-z/more-stats?style=flat-square) ![Closed issues](https://img.shields.io/github/issues-closed/zer0k-z/more-stats?style=flat-square) ![Size](https://img.shields.io/github/repo-size/zer0k-z/more-stats?style=flat-square) ![GitHub Workflow Status](https://img.shields.io/github/workflow/status/zer0k-z/more-stats/Compile%20with%20SourceMod?style=flat-square)
+![Downloads](https://img.shields.io/github/downloads/zer0k-z/more-stats/total?style=flat-square) ![Last commit](https://img.shields.io/github/last-commit/zer0k-z/more-stats?style=flat-square) ![Open issues](https://img.shields.io/github/issues/zer0k-z/more-stats?style=flat-square) ![Closed issues](https://img.shields.io/github/issues-closed/zer0k-z/more-stats?style=flat-square) ![Size](https://img.shields.io/github/repo-size/zer0k-z/more-stats?style=flat-square) ![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/zer0k-z/more-stats/main.yml?style=flat-square)
 
 Plugin to display statistics about various KZ actions. Read [this](https://github.com/Szwagi/more-stats/blob/main/README.md) if you are looking to migrate from Szwagi's plugins.
 
-### Commands
+## Commands
 
-#### Arguments
+### Arguments
+
 - Scope (s): `all` (`alltime` / `overall`) / `session` / `run` (not available for ResetStats) / `segment` / `jump` (exclusive to AirStats). Commands will show alltime statistics by default.
 - Mode (m): `kzt` / `skz` / `vnl`. Commands will use the current mode by default.
 - Course (c): 0 (main course), 1-100 (bonuses). Commands will use the current course by default.
 - For ResetStats, map name can be used instead of scope to show reset statistics for the requested map instead.
+
 #### General
+
 - `!morestats` - Display command list in console
 
 - `!pausesegment` / `!unpausesegment` / `!resumesegment` / `!togglesegment` - Toggle recording of the segment
@@ -51,18 +54,20 @@ Plugin to display statistics about various KZ actions. Read [this](https://githu
 - `!morestatsdelete <UID> <all/bhop/reset/air>.` - Delete statistics of selected player. UID is the number found in player's SteamID3: `[U:1:XXXXXXXXX]`
 
 ### Dependencies
+
 - [MovementAPI](https://github.com/danzayau/MovementAPI)
 - [GOKZ](https://github.com/KZGlobalTeam/gokz/)
-- [Updater](https://forums.alliedmods.net/showthread.php?t=169095) (Optional)
 
 ### Notes
+
 - Requires `more-stats` in databases config.
 - Not every perf would result in a speed gain. More precisely (KZT/VNL example):
 
-| # ticks on ground       | 0 (considered as 1 tick in more-stats)       | 1                                        | 2+                                         |
-|-------------------------|----------------------------------------------|------------------------------------------|--------------------------------------------|
-| Jumpbug/Duckbug/Telehop | Speed preserved, considered as GOKZ perf     | Speed clamped, considered as GOKZ perf   | Speed clamped, not considered as GOKZ perf |
-| Normal                  | N/A                                          | Speed preserved, considered as GOKZ perf | Speed clamped, not considered as GOKZ perf |
+| # ticks on ground       | 0 (considered as 1 tick in more-stats)   | 1                                        | 2+                                         |
+| ----------------------- | ---------------------------------------- | ---------------------------------------- | ------------------------------------------ |
+| Jumpbug/Duckbug/Telehop | Speed preserved, considered as GOKZ perf | Speed clamped, considered as GOKZ perf   | Speed clamped, not considered as GOKZ perf |
+| Normal                  | N/A                                      | Speed preserved, considered as GOKZ perf | Speed clamped, not considered as GOKZ perf |
 
 ### Todo
+
 - Add a way to check other players' statistics

@@ -4,14 +4,6 @@
 #include <clientprefs>
 #include <more-stats>
 
-#undef REQUIRE_EXTENSIONS
-#undef REQUIRE_PLUGIN
-
-#include <updater>
-
-#define REQUIRE_EXTENSIONS
-#define REQUIRE_PLUGIN
-
 #include "more-stats/globals.sp"
 #include "more-stats/helpers.sp"
 #include "more-stats/bhopstats.sp"
@@ -30,11 +22,9 @@ public Plugin myinfo =
 	name = "More Stats",
 	author = "Szwagi, zer0.k",
 	description = "Tracks various KZ related statistics",
-	version = "v3.1.2",
+	version = "v3.1.3",
 	url = "https://github.com/zer0k-z/more-stats"
 };
-
-#define UPDATER_URL "https://raw.githubusercontent.com/zer0k-z/more-stats/updater/updatefile.txt"
 
 // ===== [ PLUGIN EVENTS ] =====
 
@@ -62,11 +52,6 @@ public void OnPluginStart()
 			LoadClientStats(client);
 		}
 	}
-	
-	if (LibraryExists("updater"))
-	{
-		Updater_AddPlugin(UPDATER_URL);
-	}
 }
 
 public void OnPluginEnd()
@@ -80,22 +65,6 @@ public void OnPluginEnd()
 			SaveClientResetStats(client);
 			SaveClientAirStats(client);
 		}
-	}
-}
-
-public void OnAllPluginsLoaded()
-{
-	if (LibraryExists("updater"))
-	{
-		Updater_AddPlugin(UPDATER_URL);
-	}
-}
-
-public void OnLibraryAdded(const char[] name)
-{
-	if (StrEqual(name, "updater"))
-	{
-		Updater_AddPlugin(UPDATER_URL);
 	}
 }
 
